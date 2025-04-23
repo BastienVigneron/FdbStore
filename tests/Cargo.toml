@@ -1,0 +1,25 @@
+
+[package]
+  name = "tests"
+  version = "0.1.0"
+  edition = "2024"
+  publish = false
+
+[dependencies]
+  foundationdb = { version = "0.9.2", features = [
+    "embedded-fdb-include",
+    "fdb-7_1",
+  ] }
+  tokio = { version = "1.28.0", features = ["full"] }
+  ulid = { version = "1.2.1", features = ["serde"] }
+  rmp-serde = "1.1"
+  serde = { version = "1.0", features = ["derive"] }
+  async-trait = "0.1.88"
+
+[dev-dependencies]
+  fdb_derive = { path = "../fdb_derive" }
+  fdb_trait = { path = "../fdb_trait" }
+
+[[test]]
+  name = "integration_test"
+  path = "src/test.rs"

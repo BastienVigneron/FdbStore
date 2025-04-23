@@ -1,0 +1,15 @@
+dictionaries = []
+words = [
+    "aks",
+    "bob_aks",
+    "fdb",
+    "foundationdb",
+    "msgpack",
+    "rmp",
+    "tintin",
+    "trx",
+]
+flag_words = []
+ignore_paths = []
+ignore_patterns = []
+use_global = true
