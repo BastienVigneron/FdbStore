@@ -32,7 +32,9 @@ It quickly becomes annoying and error-prone.
 That's why FoundationDB is traditionally used through a [layer](https://apple.github.io/foundationdb/layer-concept.html).
 
 There are some existing [open-source layers](https://github.com/FoundationDB/awesome-foundationdb#layers) that bring you interesting functionalities.
+
 But layers add (at least) one network hop, and there is not yet an interesting layer in my favorite language (Rust) for my needs.
+
 That’s why I developed `FdbStore`.
 `FdbStore` is not a full-featured layer but can be used to develop one in Rust or to be directly used in your application.
 
