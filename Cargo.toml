@@ -1,3 +1,4 @@
 [workspace]
   resolver = "2"
   members = ["fdb_derive", "fdb_trait", "tests"]
+  license = "Apache 2"

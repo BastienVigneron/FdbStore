@@ -2,6 +2,7 @@
   name = "fdb_derive"
   version = "0.1.0"
   edition = "2024"
+  license = "Apache 2"
 
 [lib]
   proc-macro = true
