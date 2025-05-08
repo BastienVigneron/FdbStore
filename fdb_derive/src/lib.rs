@@ -1,4 +1,6 @@
 /*!
+# FdbStore
+
 ## Presentation
 
 `FdbStore` is a proc macro that generates boilerplate code that allows you to CRUD Rust structs into/from [FoundationDB](https://www.foundationdb.org/).
