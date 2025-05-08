@@ -44,7 +44,7 @@ pub enum KvError {
     #[error("commit error")]
     FdbCommitError(#[from] FdbBindingError),
     #[error("index not found")]
-    FdbMissingIndex(String),
+    FdbMissingIndex,
     #[error("key not found")]
     FdbNotFound,
     #[error("can't update primary key")]

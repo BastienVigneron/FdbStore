@@ -269,7 +269,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         Ok(existing_index)
                     }
                     None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                        KvError::FdbMissingIndex(index_key.clone()),
+                        KvError::FdbMissingIndex,
                     ))),
                 }?;
 
@@ -290,7 +290,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::FdbMissingIndex(ele),
+                            KvError::FdbMissingIndex,
                         ))),
                     }?;
                     results.push(value);
@@ -326,8 +326,8 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                                 KvError::DecodeError(e),
                             ))
                         })?;
-                    if existing_index.contains(&self.id) {
-                        existing_index.retain(|v| v != &self.id);
+                    if existing_index.contains(&self.#primary_key_ident) {
+                        existing_index.retain(|v| v != &self.#primary_key_ident);
                     };
                     if existing_index.is_empty() {
                         trx.clear(index_key_bytes);
@@ -343,7 +343,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(())
                 }
                 None => {
-                    Err(foundationdb::FdbBindingError::new_custom_error(Box::new(KvError::FdbMissingIndex(index_key))))
+                    Err(foundationdb::FdbBindingError::new_custom_error(Box::new(KvError::FdbMissingIndex)))
                 }
             }?;
         }
@@ -605,7 +605,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::FdbMissingIndex(index_name.to_string()),
+                            KvError::FdbMissingIndex,
                         ))),
                     }?;
                     Ok(value)
