@@ -3,6 +3,11 @@
   version = "0.1.0"
   edition = "2024"
   license = "Apache 2"
+  authors = ["bastien vigneron"]
+  categories = ["database", "foundationdb", "orm"]
+  description = "A simple derive macro to manage structs persistence in FoundationDB with secondary indexes automatic management"
+  homepage = "https://github.com/BastienVigneron/FdbStore"
+  repository = "https://github.com/BastienVigneron/FdbStore"
 
 [lib]
   proc-macro = true
