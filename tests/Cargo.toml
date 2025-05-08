@@ -5,6 +5,12 @@
   edition = "2024"
   publish = false
   license = "Apache 2"
+  authors = ["bastien vigneron"]
+  categories = ["database", "foundationdb", "orm"]
+  description = "A simple derive macro to manage structs persistence in FoundationDB with secondary indexes automatic management"
+  homepage = "https://github.com/BastienVigneron/FdbStore"
+  repository = "https://github.com/BastienVigneron/FdbStore"
+
 
 [dependencies]
   foundationdb = { version = "0.9.2", features = [
