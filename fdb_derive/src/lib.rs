@@ -122,7 +122,12 @@ use syn::{Data, DeriveInput, Fields, parse_macro_input};
 pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
+    let lower_name = name.to_string().to_lowercase();
+
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
+
+    let as_fdb_primary_key_fn_name =
+        syn::Ident::new(&format!("{}_as_fdb_primary_key", lower_name), name.span());
 
     // Get the fields from the struct
     let fields = match &input.data {
@@ -276,7 +281,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 let mut results: Vec<Self> = Vec::new();
                 for ele in index {
                     // convert as primary key
-                    let primary_key = as_fdb_primary_key(&ele).map_err(|e| {
+                    let primary_key = #as_fdb_primary_key_fn_name(&ele).map_err(|e| {
                         foundationdb::FdbBindingError::new_custom_error(Box::new(e))
                     })?;
                     let value = match trx.get(&primary_key, false).await? {
@@ -389,7 +394,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let expanded = quote! {
 
         /// Convert to `store:{struct_name}:{primary_key_value_in_MsgPack}`
-        fn as_fdb_primary_key<T>(input_key: &T) -> Result<Vec<u8>, KvError>
+        fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, KvError>
         where
             T: Serialize + Sync + Sized,
         {
@@ -422,7 +427,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             where
                 T: Serialize + Sync + Sized,
             {
-                let key_bytes = as_fdb_primary_key(&key)?;
+                let key_bytes = #as_fdb_primary_key_fn_name(&key)?;
                 let key_bytes = key_bytes.clone();
                 async move {
                     let key_bytes = key_bytes.clone();
@@ -454,7 +459,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 &self,
                 trx: &foundationdb::RetryableTransaction,
             ) -> Result<(), foundationdb::FdbBindingError> {
-                let key_bytes = as_fdb_primary_key(&self.#primary_key_ident)?;
+                let key_bytes = #as_fdb_primary_key_fn_name(&self.#primary_key_ident)?;
                 let value = match rmp_serde::to_vec(self) {
                     Ok(v) => v,
                     Err(e) => {
@@ -480,7 +485,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 &self,
                 trx: &foundationdb::RetryableTransaction,
             ) -> Result<(), foundationdb::FdbBindingError> {
-                    let key_bytes = as_fdb_primary_key(&self.#primary_key_ident)?;
+                    let key_bytes = #as_fdb_primary_key_fn_name(&self.#primary_key_ident)?;
                     let key_bytes = key_bytes.as_slice();
                     #(#delete_index_keys)*
                     #(#delete_unique_index_keys)*
@@ -502,7 +507,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 trx: &foundationdb::RetryableTransaction,
                 new_value: Self,
             ) -> Result<(), foundationdb::FdbBindingError> {
-                let key_bytes = as_fdb_primary_key(&self.#primary_key_ident)?;
+                let key_bytes = #as_fdb_primary_key_fn_name(&self.#primary_key_ident)?;
                 let key_bytes = key_bytes.as_slice();
                 if (&self.#primary_key_ident != &new_value.#primary_key_ident) {
                     return Err(foundationdb::FdbBindingError::CustomError(Box::new(
