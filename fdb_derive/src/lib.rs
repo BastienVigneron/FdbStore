@@ -114,6 +114,7 @@ Any kind of type can be used as a primary key / secondary index as long as it im
 - `FdbStore` doesn't (yet) manage multi-tenancy.
 
 */
+
 use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, parse_macro_input};
@@ -179,7 +180,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let mut index_key_bytes = index_key.into_bytes();
             let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
                 foundationdb::FdbBindingError::CustomError(Box::new(
-                    KvError::EncodeError(e),
+                    fdb_trait::KvError::EncodeError(e),
                 ))
             })?;
             index_key_bytes.extend(index_value);
@@ -189,7 +190,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let mut existing_index: Vec<#primary_field_type> =
                         rmp_serde::from_slice(&existing).map_err(|e| {
                             foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                KvError::DecodeError(e),
+                                fdb_trait::KvError::DecodeError(e),
                             ))
                         })?;
                     if !existing_index.contains(&self.#primary_key_ident) {
@@ -198,7 +199,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
                     rmp_serde::to_vec(&existing_index).map_err(|e| {
                         foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::EncodeError(e),
+                            fdb_trait::KvError::EncodeError(e),
                         ))
                     })?
                 }
@@ -207,7 +208,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
                     rmp_serde::to_vec(&new_index).map_err(|e| {
                         foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::EncodeError(e),
+                            fdb_trait::KvError::EncodeError(e),
                         ))
                     })?
                 }
@@ -227,7 +228,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let mut index_key_bytes = index_key.into_bytes();
             let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
                 foundationdb::FdbBindingError::CustomError(Box::new(
-                    KvError::EncodeError(e),
+                    fdb_trait::KvError::EncodeError(e),
                 ))
             })?;
             index_key_bytes.extend(index_value);
@@ -235,7 +236,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             // check if index already exist
             match trx.get(index_key_bytes, false).await? {
                 Some(_) => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                    KvError::UniqueIndexAlreadyExist,
+                    fdb_trait::KvError::UniqueIndexAlreadyExist,
                 ))),
                 None => Ok(()),
             }?;
@@ -256,7 +257,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 let mut index_key_bytes = index_key.clone().into_bytes();
                 let index_value = rmp_serde::to_vec(&index_value).map_err(|e| {
                     foundationdb::FdbBindingError::CustomError(Box::new(
-                        KvError::EncodeError(e),
+                        fdb_trait::KvError::EncodeError(e),
                     ))
                 })?;
                 index_key_bytes.extend(index_value);
@@ -268,13 +269,13 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         let existing_index: Vec<#primary_field_type> = rmp_serde::from_slice(&index)
                             .map_err(|e| {
                                 foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                    KvError::DecodeError(e),
+                                    fdb_trait::KvError::DecodeError(e),
                                 ))
                             })?;
                         Ok(existing_index)
                     }
                     None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                        KvError::FdbMissingIndex,
+                        fdb_trait::KvError::FdbMissingIndex,
                     ))),
                 }?;
 
@@ -289,13 +290,13 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                             let value: Self = rmp_serde::from_slice(&byte_value)
                                 .map_err(|e| {
                                     foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                        KvError::DecodeError(e),
+                                        fdb_trait::KvError::DecodeError(e),
                                     ))
                                 })?;
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::FdbMissingIndex,
+                            fdb_trait::KvError::FdbMissingIndex,
                         ))),
                     }?;
                     results.push(value);
@@ -317,7 +318,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let mut index_key_bytes = index_key.clone().into_bytes();
             let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
                 foundationdb::FdbBindingError::CustomError(Box::new(
-                    KvError::EncodeError(e),
+                    fdb_trait::KvError::EncodeError(e),
                 ))
             })?;
             index_key_bytes.extend(index_value);
@@ -328,7 +329,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let mut existing_index: Vec<#primary_field_type> =
                         rmp_serde::from_slice(&existing).map_err(|e| {
                             foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                KvError::DecodeError(e),
+                                fdb_trait::KvError::DecodeError(e),
                             ))
                         })?;
                     if existing_index.contains(&self.#primary_key_ident) {
@@ -340,7 +341,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         let encoded_index = rmp_serde::to_vec(&existing_index)
                             .map_err(|e| {
                                 foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                    KvError::EncodeError(e),
+                                    fdb_trait::KvError::EncodeError(e),
                                 ))
                             })?;
                         trx.set(index_key_bytes, &encoded_index);
@@ -348,7 +349,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(())
                 }
                 None => {
-                    Err(foundationdb::FdbBindingError::new_custom_error(Box::new(KvError::FdbMissingIndex)))
+                    Err(foundationdb::FdbBindingError::new_custom_error(Box::new(fdb_trait::KvError::FdbMissingIndex)))
                 }
             }?;
         }
@@ -366,7 +367,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let mut index_key_bytes = index_key.into_bytes();
             let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
                 foundationdb::FdbBindingError::CustomError(Box::new(
-                    KvError::EncodeError(e),
+                    fdb_trait::KvError::EncodeError(e),
                 ))
             })?;
             index_key_bytes.extend(index_value);
@@ -384,7 +385,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         let field_type = &field.ty;
 
         quote! {
-            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, value: #field_type) -> Result<Self, KvError> {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, value: #field_type) -> Result<Self, fdb_trait::KvError> {
                 Self::find_by_unique_index(db, stringify!(#field_name), value).await
             }
         }
@@ -394,7 +395,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let expanded = quote! {
 
         /// Convert to `store:{struct_name}:{primary_key_value_in_MsgPack}`
-        fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, KvError>
+        fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, fdb_trait::KvError>
         where
             T: Serialize + Sync + Sized,
         {
@@ -407,8 +408,8 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
         #[automatically_derived]
         #[async_trait::async_trait]
-        impl #impl_generics fdb_trait::FdbStore for #name #ty_generics #where_clause {
-            async fn load<T>(db: Arc<Database>, key: &T) -> Result<Self, KvError>
+        impl #impl_generics ::fdb_trait::FdbStore for #name #ty_generics #where_clause {
+            async fn load<T>(db: std::sync::Arc<foundationdb::Database>, key: &T) -> Result<Self, fdb_trait::KvError>
             where
                 T: Serialize + Sync + Sized,
             {
@@ -434,12 +435,12 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let value = trx
                         .get(&key_bytes, false)
                         .await?
-                        .ok_or_else(|| KvError::Empty)?;
+                        .ok_or_else(|| fdb_trait::KvError::Empty)?;
                     let result: Self = match rmp_serde::from_slice(&value) {
                         Ok(r) => r,
                         Err(e) => {
                             return Err(foundationdb::FdbBindingError::CustomError(Box::new(
-                                KvError::DecodeError(e),
+                                fdb_trait::KvError::DecodeError(e),
                             )));
                         }
                     };
@@ -448,11 +449,11 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 .await
             }
 
-            async fn save(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<(), KvError> {
+            async fn save(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<(), fdb_trait::KvError> {
                 let commit = db.run(|trx, _maybe_comitted| async move {
                     self.save_in_trx(&trx).await
                 }).await;
-                commit.map_err(KvError::FdbCommitError)
+                commit.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
              async fn save_in_trx(
@@ -464,7 +465,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(v) => v,
                     Err(e) => {
                         return Err(foundationdb::FdbBindingError::new_custom_error(
-                            Box::new(KvError::from(e)),
+                            Box::new(fdb_trait::KvError::from(e)),
                         ));
                     }
                 };
@@ -474,11 +475,11 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 Ok(())
             }
 
-            async fn delete(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<(), KvError> {
+            async fn delete(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<(), fdb_trait::KvError> {
                 let commit = db.run(|trx, _maybe_comitted| async move {
                     self.delete_in_trx(&trx).await
                 }).await;
-                commit.map_err(KvError::FdbCommitError)
+                commit.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
             async fn delete_in_trx(
@@ -493,13 +494,13 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(())
             }
 
-            async fn update(&self, db: std::sync::Arc<foundationdb::Database>, new_value: Self) -> Result<(), KvError> {
+            async fn update(&self, db: std::sync::Arc<foundationdb::Database>, new_value: Self) -> Result<(), fdb_trait::KvError> {
                 let commit = db.run(|trx, _maybe_comitted| {
                     let new_value = new_value.clone();
                     async move {
                         self.update_in_trx(&trx,new_value).await
                 }}).await;
-                commit.map_err(KvError::FdbCommitError)
+                commit.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
             async fn update_in_trx(
@@ -511,10 +512,10 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 let key_bytes = key_bytes.as_slice();
                 if (&self.#primary_key_ident != &new_value.#primary_key_ident) {
                     return Err(foundationdb::FdbBindingError::CustomError(Box::new(
-                        KvError::WrongPrimaryKey,
+                        fdb_trait::KvError::WrongPrimaryKey,
                     )));
                 }
-                let current_value = trx.get(&key_bytes , false).await?.ok_or_else(|| KvError::FdbNotFound)?;
+                let current_value = trx.get(&key_bytes , false).await?.ok_or_else(|| fdb_trait::KvError::FdbNotFound)?;
                 #(#delete_index_keys_for_update)*
                 #(#delete_unique_index_keys_for_update)*
                 trx.clear(key_bytes);
@@ -524,10 +525,10 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
 
             async fn find_by_index<T>(
-                db: Arc<Database>,
+                db: std::sync::Arc<foundationdb::Database>,
                 index_name: &str,
                 index_value: T,
-            ) -> Result<Vec<Self>, KvError>
+            ) -> Result<Vec<Self>, fdb_trait::KvError>
             where
                 T: Serialize + Sync + Sized + Clone + Send,
             {
@@ -554,10 +555,10 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
 
             async fn find_by_unique_index<T>(
-                db: Arc<Database>,
+                db: std::sync::Arc<foundationdb::Database>,
                 index_name: &str,
                 index_value: T,
-            ) -> Result<Self, KvError>
+            ) -> Result<Self, fdb_trait::KvError>
             where
                 T: Serialize + Sync + Sized + Clone + Send,
             {
@@ -568,7 +569,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     }
                 })
                 .await;
-                value.map_err(KvError::FdbCommitError)
+                value.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
             async fn find_by_unique_index_in_trx<T>(
@@ -584,7 +585,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let mut index_key_bytes = index_key.clone().into_bytes();
                     let index_value = rmp_serde::to_vec(&index_value).map_err(|e| {
                         foundationdb::FdbBindingError::CustomError(Box::new(
-                            KvError::EncodeError(e),
+                            fdb_trait::KvError::EncodeError(e),
                         ))
                     })?;
                     index_key_bytes.extend(index_value);
@@ -595,22 +596,22 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         .await
                         .map_err(|e| {
                             foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                KvError::from(e),
+                                fdb_trait::KvError::from(e),
                             ))
                         })?
-                        .ok_or_else(|| KvError::FdbNotFound)?;
+                        .ok_or_else(|| fdb_trait::KvError::FdbNotFound)?;
                     let value = match trx.get(&primary_key, false).await? {
                         Some(byte_value) => {
                             let value: Self = rmp_serde::from_slice(&byte_value)
                                 .map_err(|e| {
                                     foundationdb::FdbBindingError::new_custom_error(Box::new(
-                                        KvError::DecodeError(e),
+                                        fdb_trait::KvError::DecodeError(e),
                                     ))
                                 })?;
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            KvError::FdbMissingIndex,
+                            fdb_trait::KvError::FdbMissingIndex,
                         ))),
                     }?;
                     Ok(value)
