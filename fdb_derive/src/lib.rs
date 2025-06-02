@@ -218,6 +218,32 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     });
     let create_index_keys_for_trx = create_index_keys.clone();
 
+    // Generate range index for range queries
+    let create_range_index = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let index_name = field_name.as_ref().unwrap().to_string();
+        let name = name.to_string();
+        quote! {
+            let index_key = format!("store:{}:unique_index:{}:", #name, #index_name);
+            let mut index_key_bytes = index_key.into_bytes();
+            let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
+                foundationdb::FdbBindingError::CustomError(Box::new(
+                    fdb_trait::KvError::EncodeError(e),
+                ))
+            })?;
+            index_key_bytes.extend(index_value);
+            let index_key_bytes = index_key_bytes.as_slice();
+            // check if index already exist
+            match trx.get(index_key_bytes, false).await? {
+                Some(_) => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
+                    fdb_trait::KvError::UniqueIndexAlreadyExist,
+                ))),
+                None => Ok(()),
+            }?;
+            trx.set(index_key_bytes, &key_bytes);
+        }
+    });
+
     // Generate code for creating unique index keys
     let create_unique_index_keys = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
@@ -296,7 +322,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            fdb_trait::KvError::FdbMissingIndex,
+                            fdb_trait::KvError::FdbPrimaryKeyValueNotFound,
                         ))),
                     }?;
                     results.push(value);
@@ -391,18 +417,52 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
+    // Get keys as bytes
+    let get_unique_index_key_as_bytes = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let index_name = field_name.as_ref().unwrap().to_string();
+        let name = name.to_string();
+        let method_name = format!("get_bytes_key_{}", field_name.as_ref().unwrap());
+        let method_ident_self = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let method_name_anon = format!("as_bytes_key_{}", field_name.as_ref().unwrap());
+        let method_ident_anon = syn::Ident::new(&method_name_anon, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub fn #method_ident_self(&self) -> Result<Vec<u8>, fdb_trait::KvError> {
+                let index_key = format!("store:{}:unique_index:{}:", #name, #index_name);
+                let mut index_key_bytes = index_key.into_bytes();
+                let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
+                   fdb_trait::KvError::EncodeError(e)
+                })?;
+                index_key_bytes.extend(index_value);
+                Ok(index_key_bytes)
+            }
+
+            pub fn #method_ident_anon(value: #field_type) -> Result<Vec<u8>, fdb_trait::KvError> {
+                let index_key = format!("store:{}:unique_index:{}:", #name, #index_name);
+                let mut index_key_bytes = index_key.into_bytes();
+                let index_value = rmp_serde::to_vec(&value).map_err(|e| {
+                   fdb_trait::KvError::EncodeError(e)
+                })?;
+                index_key_bytes.extend(index_value);
+                Ok(index_key_bytes)
+            }
+        }
+    });
+
     // Implement FdbStore trait
     let expanded = quote! {
 
         /// Convert to `store:{struct_name}:{primary_key_value_in_MsgPack}`
-        fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, fdb_trait::KvError>
+        pub fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, fdb_trait::KvError>
         where
             T: Serialize + Sync + Sized,
         {
             let index_key = format!("store:{}:", stringify!(#name));
             let mut key_bytes = index_key.into_bytes();
             let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
-            key_bytes.extend(key);
+            // key_bytes.extend(key);
             Ok(key_bytes)
         }
 
@@ -617,10 +677,120 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(value)
                 }.await
             }
+
+            /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
+            async fn find_by_unique_index_range<T>(
+                db: Arc<Database>,
+                index_name: &str,
+                start: Option<&T>,
+                stop: Option<&T>,
+                max_results: Option<usize>,
+            ) -> Result<(Vec<Self>, Option<T>), fdb_trait::KvError>
+            where
+                T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone {
+                let value = db.run(|trx, _maybe_comitted| {
+                    let index_name = index_name.clone();
+                    let start = start.clone();
+                    let stop = stop.clone();
+                    let max_results = max_results.clone();
+                    async move {
+                        Self::find_by_unique_index_in_trx_range(&trx, index_name, start, stop, max_results).await
+                    }
+                })
+                .await;
+                value.map_err(fdb_trait::KvError::FdbCommitError)
+            }
+
+            /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
+            async fn find_by_unique_index_in_trx_range<T>(
+                trx: &foundationdb::RetryableTransaction,
+                index_name: &str,
+                start: Option<&T>,
+                stop: Option<&T>,
+                max_results: Option<usize>,
+            ) -> Result<(Vec<Self>, Option<T>), foundationdb::FdbBindingError>
+            where
+                T: Serialize + DeserializeOwned  + Sync + Sized + Send + Clone{
+                async move {
+                    let index_name =
+                        format!("store:{}:unique_index:{}:", stringify!(#name), index_name);
+                    let mut start_index_key_bytes = index_name.clone().into_bytes();
+                    let index_bytes_first_part_len = start_index_key_bytes.len();
+                    let start_key = match start {
+                        Some(start) => {
+                            let start_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&start).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        fdb_trait::KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            start_index_key_bytes.extend(start_index_value);
+                            start_index_key_bytes.as_slice()
+                        }
+                        None => start_index_key_bytes.as_slice(),
+                    };
+                    let end_key = [index_name.as_bytes(), &[0xFF]].concat();
+                    let range_option: foundationdb::RangeOption = foundationdb::RangeOption {
+                        limit: max_results.map(|v| v + 1),
+                        ..foundationdb::RangeOption::from((start_key, end_key.as_ref()))
+                    };
+                    let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
+
+                    // Retrieve `Self` values from secondary indexes
+                    let mut results: Vec<Self> = Vec::new();
+                    let mut last_marker: Option<T> = None;
+                    for ele in iter {
+                        let value = trx
+                            .get(ele.value(), false)
+                            .await?
+                            .ok_or_else(|| fdb_trait::KvError::Empty)?;
+                        match rmp_serde::from_slice(&value) {
+                            Ok(r) => {
+                                results.push(r);
+                                let last_marker_bytes =
+                                    ele.key().split_at(index_bytes_first_part_len).1;
+                                last_marker =
+                                    rmp_serde::from_slice(last_marker_bytes).map_err(|e| {
+                                        foundationdb::FdbBindingError::CustomError(Box::new(
+                                            fdb_trait::KvError::DecodeError(e),
+                                        ))
+                                    })?;
+                            }
+                            Err(e) => {
+                                return Err(foundationdb::FdbBindingError::CustomError(Box::new(
+                                    fdb_trait::KvError::DecodeError(e),
+                                )));
+                            }
+                        };
+                    }
+
+                    // Check if there is remaining keys
+                    let has_more_items = match max_results {
+                        Some(max) => results.len() > max,
+                        None => false,
+                    };
+
+                    // Remove first element to avoid cover
+                    if start.is_some() && results.len() > 1 {
+                        results.remove(0);
+                    };
+
+                    // Remove last item to avoid cover
+                    if results.len() > 1 && has_more_items {
+                        results.truncate(results.len() - 1);
+                    };
+
+                    // let last_marker = results.last().map(|ak| ak.marker);
+                    Ok((results, last_marker))
+                }
+                .await
+            }
         }
 
         impl #impl_generics #name #ty_generics #where_clause {
             #(#load_by_unique_index_methods)*
+
+            #(#get_unique_index_key_as_bytes )*
         }
     };
 

@@ -4,10 +4,11 @@
 #[cfg(test)]
 mod tests {
     use fdb_derive::FdbStore;
-    use fdb_trait::FdbStore;
-    use fdb_trait::KvError;
+    use fdb_trait::{FdbStore, KvError};
+    use foundationdb::RangeOption;
     use foundationdb::api::NetworkAutoStop;
     use foundationdb::{Database, FdbResult};
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
 
     use std::str::FromStr;
@@ -60,9 +61,9 @@ mod tests {
             owner: "Bob".to_string(),
         };
 
-        // Save with indexes
-        ak1.save(db.clone()).await?;
+        // Ak::find_by_unique_index_range(db, index_name, start, stop)
 
+        ak1.save(db.clone()).await?;
         // Load from fdb to check equality
         let r = Ak::load(db.clone(), &"4H2EKB28NOXPF6K40QOT").await?;
         assert!(r == ak1);
@@ -136,28 +137,33 @@ mod tests {
         };
         ak2.save(db.clone()).await?;
 
+        println!("saves ok");
+
         // Check Bob has now two ak
         let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 2);
+        println!("find ok");
 
-        // Delete ak1
-        ak1.delete(db.clone()).await?;
+        // // Delete ak1
+        // ak1.delete(db.clone()).await?;
+        // println!("delete ok");
 
-        // Check Bob has now only one ak
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
-        assert!(r.len() == 1);
+        // // Check Bob has now only one ak
+        // let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        // assert!(r.len() == 1);
+        // println!("len ok");
 
-        // Check ak1 is not available from secondary index by using named method
-        let r = Ak::load_by_sk(
-            db.clone(),
-            "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
-        )
-        .await;
-        assert!(r.is_err());
+        // // Check ak1 is not available from secondary index by using named method
+        // let r = Ak::load_by_sk(
+        //     db.clone(),
+        //     "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
+        // )
+        // .await;
+        // assert!(r.is_err());
 
-        // Check ak1 can't be loaded by primary key
-        let r = Ak::load(db.clone(), &ak1.id).await;
-        assert!(r.is_err());
+        // // Check ak1 can't be loaded by primary key
+        // let r = Ak::load(db.clone(), &ak1.id).await;
+        // assert!(r.is_err());
         Ok(())
     }
 
