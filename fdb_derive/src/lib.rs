@@ -462,7 +462,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let index_key = format!("store:{}:", stringify!(#name));
             let mut key_bytes = index_key.into_bytes();
             let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
-            // key_bytes.extend(key);
+            key_bytes.extend(key);
             Ok(key_bytes)
         }
 
