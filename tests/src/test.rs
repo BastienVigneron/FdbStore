@@ -5,7 +5,6 @@
 mod tests {
     use fdb_derive::FdbStore;
     use fdb_trait::{FdbStore, KvError};
-    use foundationdb::RangeOption;
     use foundationdb::api::NetworkAutoStop;
     use foundationdb::{Database, FdbResult};
     use serde::de::DeserializeOwned;
@@ -137,33 +136,28 @@ mod tests {
         };
         ak2.save(db.clone()).await?;
 
-        println!("saves ok");
-
         // Check Bob has now two ak
         let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 2);
-        println!("find ok");
 
-        // // Delete ak1
-        // ak1.delete(db.clone()).await?;
-        // println!("delete ok");
+        // Delete ak1
+        ak1.delete(db.clone()).await?;
 
-        // // Check Bob has now only one ak
-        // let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
-        // assert!(r.len() == 1);
-        // println!("len ok");
+        // Check Bob has now only one ak
+        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        assert!(r.len() == 1);
 
-        // // Check ak1 is not available from secondary index by using named method
-        // let r = Ak::load_by_sk(
-        //     db.clone(),
-        //     "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
-        // )
-        // .await;
-        // assert!(r.is_err());
+        // Check ak1 is not available from secondary index by using named method
+        let r = Ak::load_by_sk(
+            db.clone(),
+            "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
+        )
+        .await;
+        assert!(r.is_err());
 
-        // // Check ak1 can't be loaded by primary key
-        // let r = Ak::load(db.clone(), &ak1.id).await;
-        // assert!(r.is_err());
+        // Check ak1 can't be loaded by primary key
+        let r = Ak::load(db.clone(), &ak1.id).await;
+        assert!(r.is_err());
         Ok(())
     }
 
@@ -220,6 +214,66 @@ mod tests {
         let r = Ak::find_by_index(db.clone(), "owner", "Alice".to_string()).await?;
         assert!(r.len() == 1 && r.first().unwrap().id == *"4H2EKB28NOXPF6K40QOT");
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_04_range_query() -> Result<(), KvError> {
+        let db = setup_database().await?;
+
+        let ak1 = Ak {
+            id: "".to_string(),
+            sk: "".to_string(),
+            state: "ACTIVE".to_string(),
+            tags: None,
+            marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+            trusted: true,
+            owner: "Bob".to_string(),
+        };
+
+        let aks: Vec<Ak> = (1..20)
+            .map(|i| Ak {
+                id: format!("id-{:?}", i),
+                sk: format!("sk-{:?}", i),
+                marker: ulid::Ulid::new(),
+                ..ak1.clone()
+            })
+            .collect();
+
+        for ele in &aks {
+            ele.save(db.clone()).await?;
+        }
+        println!("saved...");
+        aks.iter()
+            .for_each(|ak| println!("id: {:?}, sk: {:?}", ak.id, ak.sk,));
+
+        // test by getting the first 5 items
+        let range = Ak::find_by_unique_index_range::<String>(
+            db.clone(),
+            "sk",
+            Some(&aks.first().unwrap().sk),
+            None,
+            Some(5),
+        )
+        .await?;
+
+        println!("Range: {:#?}", range);
+        assert!(range.0.len() == 5);
+        assert!(range.0.last().unwrap().sk == *"sk-5");
+        assert!(range.1 == Some("sk-6".to_owned()));
+
+        // test by getting in range (between start and stop)
+        let range = Ak::find_by_unique_index_range::<String>(
+            db.clone(),
+            "sk",
+            Some(&"sk-4".to_owned()),
+            Some(&"sk-8".to_owned()),
+            None,
+        )
+        .await?;
+        println!("Range: {:#?}", range);
+
+        assert!(range.0.len() == 4);
         Ok(())
     }
 }

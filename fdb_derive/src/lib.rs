@@ -715,6 +715,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let index_name =
                         format!("store:{}:unique_index:{}:", stringify!(#name), index_name);
                     let mut start_index_key_bytes = index_name.clone().into_bytes();
+                    let mut stop_index_key_bytes = index_name.clone().into_bytes();
                     let index_bytes_first_part_len = start_index_key_bytes.len();
                     let start_key = match start {
                         Some(start) => {
@@ -729,10 +730,24 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         }
                         None => start_index_key_bytes.as_slice(),
                     };
-                    let end_key = [index_name.as_bytes(), &[0xFF]].concat();
+                    let end_key = match stop {
+                        Some(stop) => {
+                            let stop_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&stop).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            stop_index_key_bytes.extend(stop_index_value);
+
+                            stop_index_key_bytes.as_slice()
+                        }
+                        None => &[index_name.as_bytes(), &[0xFF]].concat(),
+                    };
+
                     let range_option: foundationdb::RangeOption = foundationdb::RangeOption {
                         limit: max_results.map(|v| v + 1),
-                        ..foundationdb::RangeOption::from((start_key, end_key.as_ref()))
+                        ..foundationdb::RangeOption::from((start_key, end_key))
                     };
                     let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
 
@@ -770,10 +785,10 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         None => false,
                     };
 
-                    // Remove first element to avoid cover
-                    if start.is_some() && results.len() > 1 {
-                        results.remove(0);
-                    };
+                    // // Remove first element to avoid cover
+                    // if start.is_some() && results.len() > 1 {
+                    //     results.remove(0);
+                    // };
 
                     // Remove last item to avoid cover
                     if results.len() > 1 && has_more_items {

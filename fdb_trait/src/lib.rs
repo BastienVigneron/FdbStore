@@ -5,7 +5,7 @@ use std::{fmt, sync::Arc};
 use async_trait::async_trait;
 pub use error::KvError;
 use foundationdb::{Database, FdbBindingError};
-use serde::{Deserialize, Serialize, de::DeserializeOwned};
+use serde::{Serialize, de::DeserializeOwned};
 
 /// FdbStore trait define all methods implemented by `fdb_derive` module.
 #[async_trait]
@@ -256,6 +256,7 @@ mod tests {
                     let index_name =
                         format!("store:{}:unique_index:{}:", stringify!(#name), index_name);
                     let mut start_index_key_bytes = index_name.clone().into_bytes();
+                    let mut stop_index_key_bytes = index_name.clone().into_bytes();
                     let index_bytes_first_part_len = start_index_key_bytes.len();
                     let start_key = match start {
                         Some(start) => {
@@ -270,10 +271,24 @@ mod tests {
                         }
                         None => start_index_key_bytes.as_slice(),
                     };
-                    let end_key = [index_name.as_bytes(), &[0xFF]].concat();
+                    let end_key = match stop {
+                        Some(stop) => {
+                            let stop_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&stop).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            stop_index_key_bytes.extend(stop_index_value);
+
+                            stop_index_key_bytes.as_slice()
+                        }
+                        None => &[index_name.as_bytes(), &[0xFF]].concat(),
+                    };
+                    // let end_key = [index_name.as_bytes(), &[0xFF]].concat();
                     let range_option: foundationdb::RangeOption = foundationdb::RangeOption {
                         limit: max_results.map(|v| v + 1),
-                        ..foundationdb::RangeOption::from((start_key, end_key.as_ref()))
+                        ..foundationdb::RangeOption::from((start_key, end_key))
                     };
                     let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
 
