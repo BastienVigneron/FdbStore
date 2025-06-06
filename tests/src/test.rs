@@ -4,7 +4,7 @@
 #[cfg(test)]
 mod tests {
     use fdb_derive::FdbStore;
-    use fdb_trait::{FdbStore, KvError};
+    use fdb_trait::{FdbStore, KvError, RangeQuery};
     use foundationdb::api::NetworkAutoStop;
     use foundationdb::{Database, FdbResult};
     use serde::de::DeserializeOwned;
@@ -251,29 +251,47 @@ mod tests {
         let range = Ak::find_by_unique_index_range::<String>(
             db.clone(),
             "sk",
-            Some(&aks.first().unwrap().sk),
-            None,
-            Some(5),
+            RangeQuery::NFirstResults(5),
+            false,
         )
         .await?;
 
         println!("Range: {:#?}", range);
         assert!(range.0.len() == 5);
         assert!(range.0.last().unwrap().sk == *"sk-5");
-        assert!(range.1 == Some("sk-6".to_owned()));
+        assert!(range.1 == Some("sk-5".to_owned()));
 
         // test by getting in range (between start and stop)
         let range = Ak::find_by_unique_index_range::<String>(
             db.clone(),
             "sk",
-            Some(&"sk-4".to_owned()),
-            Some(&"sk-8".to_owned()),
-            None,
+            RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
+            false,
         )
         .await?;
         println!("Range: {:#?}", range);
 
-        assert!(range.0.len() == 4);
+        assert!(range.0.len() == 5);
+
+        // test by getting all
+        let range =
+            Ak::find_by_unique_index_range::<String>(db.clone(), "sk", RangeQuery::All, false)
+                .await?;
+        println!("Range: {:#?}", range);
+        assert!(range.0.len() == 19);
+        assert!(range.0.last() == aks.last());
+
+        // test getting 10 result from "sk-5"
+        let range = Ak::find_by_unique_index_range_sk(
+            db.clone(),
+            RangeQuery::StartAndNbResult("sk-5".to_owned(), 10),
+            false,
+        )
+        .await?;
+        println!("Range: {:#?}", range);
+        assert!(range.0.len() == 10);
+        assert!(range.1 == Some("sk-14".to_owned()));
+
         Ok(())
     }
 }
