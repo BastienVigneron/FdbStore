@@ -391,7 +391,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
-    // Generate helper methods for getting by ranges
+    // Generate helper methods for getting by ranges on uniq indexes
     let getting_by_range_methods = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
         let method_name = format!("find_by_unique_index_range_{}", field_name.as_ref().unwrap());
@@ -404,6 +404,20 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
         }
     });
+
+    // Generate helper methods for getting by ranges on primary keys
+    let getting_by_primary_range_methods = {
+        let field_name = &primary_key_field.ident;
+        let method_name = "load_by_primary_range".to_string();
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &primary_key_field.ty;
+
+        quote! {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>) -> Result<Vec<Self>, fdb_trait::KvError> {
+                Self::load_by_range(db, query).await
+            }
+        }
+    };
 
     // Get keys as bytes
     let get_unique_index_key_as_bytes = unique_index_fields.iter().map(|field| {
@@ -447,7 +461,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         where
             T: Serialize + Sync + Sized,
         {
-            let index_key = format!("store:{}:", stringify!(#name));
+            let index_key = format!("store:{}:primary:", stringify!(#name));
             let mut key_bytes = index_key.into_bytes();
             let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
             key_bytes.extend(key);
@@ -500,23 +514,85 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             /// Load struct from FDB via primary key range identified by `fdb_key` attribute
             async fn load_by_range<T>(
                 db: Arc<Database>,
-                query: RangeQuery<T>,
+                query: fdb_trait::RangeQuery<T>,
             ) -> Result<Vec<Self>, KvError>
             where
-                T: Serialize + Sync + Sized + std::marker::Send,
+                T: Serialize + Sync + Sized + std::marker::Send + Clone
             {
-                todo!()
+                let value = db.run(|trx, _maybe_comitted| {
+                    let query = query.clone();
+                    async move {
+                        Self::load_by_range_in_trx(&trx, query).await
+                    }
+                })
+                .await;
+                value.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
             /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
             async fn load_by_range_in_trx<T>(
                 trx: &foundationdb::RetryableTransaction,
-                query: RangeQuery<T>,
+                query: fdb_trait::RangeQuery<T>,
             ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
             where
                 T: Serialize + Sync + Sized + std::marker::Send,
             {
-                todo!()
+                let index_name = format!("store:{}:primary:", stringify!(#name));
+                let end_end_key = [index_name.as_bytes(), &[0xFF]].concat();
+
+                async move {
+                    let range_option: foundationdb::RangeOption = match query {
+                        RangeQuery::StartAndStop(start, stop) => {
+                            let start_index_value = #as_fdb_primary_key_fn_name(&start)?;
+                            let stop_index_value = #as_fdb_primary_key_fn_name(&stop)?;
+
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((
+                                    start_index_value,
+                                    stop_index_value,
+                                ))
+                            }
+                        }
+                        RangeQuery::StartAndNbResult(start, nb_results) => {
+                            let start_index_value = #as_fdb_primary_key_fn_name(&start)?;
+
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_index_value, end_end_key))
+                            }
+                        }
+                        RangeQuery::NFirstResults(nb_results) => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                        RangeQuery::All => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                    };
+
+                    let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
+                    let mut results: Vec<Self> = Vec::new();
+                    for ele in iter {
+                        match rmp_serde::from_slice(ele.value()) {
+                            Ok(r) => {
+                                results.push(r);
+                            }
+                            Err(err) => {
+                                return Err(foundationdb::FdbBindingError::CustomError(Box::new(
+                                    fdb_trait::KvError::DecodeError(err),
+                                )));
+                            }
+                        };
+                    }
+                    Ok(results)
+                }
+                .await
             }
 
 
@@ -825,7 +901,9 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             #(#load_by_unique_index_methods)*
             #(#get_unique_index_key_as_bytes )*
             #(#getting_by_range_methods )*
+            #getting_by_primary_range_methods
         }
+
     };
 
     TokenStream::from(expanded)

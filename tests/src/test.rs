@@ -218,7 +218,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn test_04_range_query() -> Result<(), KvError> {
+    async fn test_04_range_uniq_index_query() -> Result<(), KvError> {
         let db = setup_database().await?;
 
         let ak1 = Ak {
@@ -291,6 +291,47 @@ mod tests {
         println!("Range: {:#?}", range);
         assert!(range.0.len() == 10);
         assert!(range.1 == Some("sk-14".to_owned()));
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_05_range_primary_index_query() -> Result<(), KvError> {
+        let db = setup_database().await?;
+
+        let ak1 = Ak {
+            id: "".to_string(),
+            sk: "".to_string(),
+            state: "ACTIVE".to_string(),
+            tags: None,
+            marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+            trusted: true,
+            owner: "Bob".to_string(),
+        };
+
+        let aks: Vec<Ak> = (1..20)
+            .map(|i| Ak {
+                id: format!("id-{:?}", i),
+                sk: format!("sk-{:?}", i),
+                marker: ulid::Ulid::new(),
+                ..ak1.clone()
+            })
+            .collect();
+
+        for ele in &aks {
+            ele.save(db.clone()).await?;
+        }
+        println!("saved...");
+
+        let all = Ak::load_by_range::<Ak>(db.clone(), RangeQuery::All).await?;
+        assert!(all.len() == 19);
+
+        let range1 = Ak::load_by_primary_range(
+            db.clone(),
+            RangeQuery::StartAndStop("id-3".to_owned(), "id-6".to_owned()),
+        )
+        .await?;
+        assert!(range1.len() == 3);
 
         Ok(())
     }

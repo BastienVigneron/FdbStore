@@ -42,7 +42,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         query: RangeQuery<T>,
     ) -> Result<Vec<Self>, KvError>
     where
-        T: Serialize + Sync + Sized + std::marker::Send;
+        T: Serialize + Sync + Sized + std::marker::Send + Clone;
 
     /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
     async fn load_by_range_in_trx<T>(
@@ -134,6 +134,8 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
 #[cfg(test)]
 mod tests {
 
+    use std::ascii::AsciiExt;
+
     use serde::Deserialize;
 
     use super::*;
@@ -149,6 +151,17 @@ mod tests {
             marker: String,
             trusted: bool,
             owner: String,
+        }
+
+        pub fn ak_as_fdb_primary_key<T>(input_key: &T) -> Result<Vec<u8>, KvError>
+        where
+            T: Serialize + Sync + Sized,
+        {
+            let index_key = format!("store:{}:", "Ak");
+            let mut key_bytes = index_key.into_bytes();
+            let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
+            key_bytes.extend(key);
+            Ok(key_bytes)
         }
 
         #[async_trait::async_trait]
@@ -178,9 +191,15 @@ mod tests {
                 query: RangeQuery<T>,
             ) -> Result<Vec<Self>, KvError>
             where
-                T: Serialize + Sync + Sized + std::marker::Send,
+                T: Serialize + Sync + Sized + std::marker::Send + Clone,
             {
-                todo!()
+                let value = db
+                    .run(|trx, _maybe_comitted| {
+                        let query = query.clone();
+                        async move { Self::load_by_range_in_trx(&trx, query).await }
+                    })
+                    .await;
+                value.map_err(KvError::FdbCommitError)
             }
 
             /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
@@ -191,7 +210,62 @@ mod tests {
             where
                 T: Serialize + Sync + Sized + std::marker::Send,
             {
-                todo!()
+                let index_name = format!("store:{}:", stringify!(#name));
+                let end_end_key = [index_name.as_bytes(), &[0xFF]].concat();
+
+                async move {
+                    let range_option: foundationdb::RangeOption = match query {
+                        RangeQuery::StartAndStop(start, stop) => {
+                            let start_index_value = ak_as_fdb_primary_key(&start)?;
+                            let stop_index_value = ak_as_fdb_primary_key(&stop)?;
+
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((
+                                    start_index_value,
+                                    stop_index_value,
+                                ))
+                            }
+                        }
+                        RangeQuery::StartAndNbResult(start, nb_results) => {
+                            let start_index_value = ak_as_fdb_primary_key(&start)?;
+
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_index_value, end_end_key))
+                            }
+                        }
+                        RangeQuery::NFirstResults(nb_results) => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                        RangeQuery::All => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                    };
+
+                    let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
+                    let mut results: Vec<Self> = Vec::new();
+                    for ele in iter {
+                        match rmp_serde::from_slice(ele.value()) {
+                            Ok(r) => {
+                                results.push(r);
+                            }
+                            Err(err) => {
+                                return Err(foundationdb::FdbBindingError::CustomError(Box::new(
+                                    KvError::DecodeError(err),
+                                )));
+                            }
+                        };
+                    }
+                    Ok(results)
+                }
+                .await
             }
 
             /// Save struct and generate all secondary indexes identified by either `fdb_index` or `fdb_unique_index`

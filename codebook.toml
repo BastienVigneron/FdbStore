@@ -5,6 +5,7 @@ words = [
     "fdb",
     "foundationdb",
     "msgpack",
+    "rangequery::all",
     "rmp",
     "tintin",
     "trx",
