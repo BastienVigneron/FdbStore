@@ -248,22 +248,17 @@ mod tests {
             .for_each(|ak| println!("id: {:?}, sk: {:?}", ak.id, ak.sk,));
 
         // test by getting the first 5 items
-        let range = Ak::find_by_unique_index_range::<String>(
-            db.clone(),
-            "sk",
-            RangeQuery::NFirstResults(5),
-            false,
-        )
-        .await?;
+        let range =
+            Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+                .await?;
 
         println!("Range: {:#?}", range);
         assert!(range.len() == 5);
         assert!(range.last().unwrap().sk == *"sk-5");
 
         // test by getting in range (between start and stop)
-        let range = Ak::find_by_unique_index_range::<String>(
+        let range = Ak::find_by_unique_index_range_sk(
             db.clone(),
-            "sk",
             RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
             false,
         )
@@ -273,9 +268,7 @@ mod tests {
         assert!(range.len() == 5);
 
         // test by getting all
-        let range =
-            Ak::find_by_unique_index_range::<String>(db.clone(), "sk", RangeQuery::All, false)
-                .await?;
+        let range = Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::All, false).await?;
         println!("Range: {:#?}", range);
         assert!(range.len() == 19);
         assert!(range.last() == aks.last());
@@ -289,7 +282,6 @@ mod tests {
         .await?;
         println!("Range: {:#?}", range);
         assert!(range.len() == 10);
-
         Ok(())
     }
 
@@ -321,7 +313,7 @@ mod tests {
         }
         println!("saved...");
 
-        let all = Ak::load_by_range::<Ak>(db.clone(), RangeQuery::All).await?;
+        let all = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
         assert!(all.len() == 19);
 
         let range1 = Ak::load_by_primary_range(

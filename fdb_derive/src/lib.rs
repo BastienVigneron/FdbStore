@@ -100,6 +100,57 @@ ak1.update(db.clone(), ak_updated.clone()).await?;
 
 // And finally delete it
 ak1.delete(db.clone()).await?;
+
+// You can also manage range query either on primary key or uniq indexes
+let ak1 = Ak {
+    id: "".to_string(),
+    sk: "".to_string(),
+    state: "ACTIVE".to_string(),
+    tags: None,
+    marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+    trusted: true,
+    owner: "Bob".to_string(),
+};
+let aks: Vec<Ak> = (1..20)
+    .map(|i| Ak {
+        id: format!("id-{:?}", i),
+        sk: format!("sk-{:?}", i),
+        marker: ulid::Ulid::new(),
+        ..ak1.clone()
+    })
+    .collect();
+for ele in &aks {
+    ele.save(db.clone()).await?;
+}
+println!("saved...");
+
+let range =
+    Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+        .await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+assert!(range.last().unwrap().sk == *"sk-5");
+
+// test by getting in range (between start and stop)
+let range = Ak::find_by_unique_index_range_sk(
+    db.clone(),
+    RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
+    false,
+)
+.await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+
+// Or getting by primary key range
+let all = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
+assert!(all.len() == 19);
+
+let range1 = Ak::load_by_primary_range(
+    db.clone(),
+    RangeQuery::StartAndStop("id-3".to_owned(), "id-6".to_owned()),
+)
+.await?;
+assert!(range1.len() == 3);
 ```
 
 Checkout tests in `/tests/src/test.rs` for more examples.
@@ -110,7 +161,6 @@ Any kind of type can be used as a primary key / secondary index as long as it im
 - `FdbStore` doesn't (yet) manage key or value splitting if a key exceeds 10,000 bytes or a value exceeds 100,000 bytes (after serialization).
 - `FdbStore` doesn't (yet) manage large transactions (I.E. transaction that exceed 10,000,000 bytes of affected data).
 - `FdbStore` doesn't (yet) manage data encryption.
-- `FdbStore` doesn't (yet) manage range queries.
 - `FdbStore` doesn't (yet) manage multi-tenancy.
 
 */
@@ -391,6 +441,19 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
+    let load_by_unique_index_methods_in_trx = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("load_by_{}_in_trx", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Self, foundationdb::FdbBindingError> {
+                Self::find_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
+            }
+        }
+    });
+
     // Generate helper methods for getting by ranges on uniq indexes
     let getting_by_range_methods = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
@@ -405,9 +468,21 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
+    let getting_by_range_methods_in_trx = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("find_by_unique_index_range_{}_in_trx", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
+                Self::find_by_unique_index_in_trx_range::<#field_type>(trx, stringify!(#field_name), query, ignore_first_result).await
+            }
+        }
+    });
+
     // Generate helper methods for getting by ranges on primary keys
     let getting_by_primary_range_methods = {
-        let field_name = &primary_key_field.ident;
         let method_name = "load_by_primary_range".to_string();
         let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
         let field_type = &primary_key_field.ty;
@@ -415,6 +490,19 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         quote! {
             pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>) -> Result<Vec<Self>, fdb_trait::KvError> {
                 Self::load_by_range(db, query).await
+            }
+        }
+    };
+
+    // Generate helper methods for getting by ranges on primary keys in tx
+    let getting_by_primary_range_in_trx_methods = {
+        let method_name = "load_by_primary_range_in_trx".to_string();
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &primary_key_field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, query: fdb_trait::RangeQuery<#field_type>) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
+                Self::load_by_range_in_trx(trx, query).await
             }
         }
     };
@@ -890,9 +978,12 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
         impl #impl_generics #name #ty_generics #where_clause {
             #(#load_by_unique_index_methods)*
+            #(#load_by_unique_index_methods_in_trx )*
             #(#get_unique_index_key_as_bytes )*
             #(#getting_by_range_methods )*
+            #(#getting_by_range_methods_in_trx )*
             #getting_by_primary_range_methods
+            #getting_by_primary_range_in_trx_methods
         }
 
     };
