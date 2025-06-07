@@ -5,7 +5,20 @@ use std::{fmt, sync::Arc};
 use async_trait::async_trait;
 pub use error::KvError;
 use foundationdb::{Database, FdbBindingError};
-use serde::Serialize;
+use serde::{Serialize, de::DeserializeOwned};
+
+/// RangeQuery:
+/// - StartAndStop: find value between start (inclusive) and stop (exclusive)
+/// - StartAndNbResult: find N values starting to start (inclusive)
+/// - NFirstResults: Find N first results (starting to the very first lexicographic value)
+/// - All: Return all values, considering FoundationDB [limitations](https://apple.github.io/foundationdb/known-limitations.html)
+#[derive(Clone)]
+pub enum RangeQuery<T> {
+    StartAndStop(T, T),
+    StartAndNbResult(T, usize),
+    NFirstResults(usize),
+    All,
+}
 
 /// FdbStore trait define all methods implemented by `fdb_derive` module.
 #[async_trait]
@@ -22,6 +35,22 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     ) -> Result<Self, foundationdb::FdbBindingError>
     where
         T: Serialize + Sync + Sized;
+
+    /// Load struct from FDB via primary key range identified by `fdb_key` attribute
+    async fn load_by_range<T>(
+        db: Arc<Database>,
+        query: RangeQuery<T>,
+    ) -> Result<Vec<Self>, KvError>
+    where
+        T: Serialize + Sync + Sized + std::marker::Send + Clone;
+
+    /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
+    async fn load_by_range_in_trx<T>(
+        trx: &foundationdb::RetryableTransaction,
+        query: RangeQuery<T>,
+    ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
+    where
+        T: Serialize + Sync + Sized + std::marker::Send;
 
     /// Save struct and generate all secondary indexes identified by either `fdb_index` or `fdb_unique_index`
     async fn save(&self, db: Arc<Database>) -> Result<(), KvError>;
@@ -81,4 +110,23 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     ) -> Result<Self, foundationdb::FdbBindingError>
     where
         T: Serialize + Sync + Sized + Send + Clone;
+
+    /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
+    async fn find_by_unique_index_range<T>(
+        db: Arc<Database>,
+        index_name: &str,
+        query: RangeQuery<T>,
+        ignore_first_result: bool,
+    ) -> Result<Vec<Self>, KvError>
+    where
+        T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
+    /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
+    async fn find_by_unique_index_in_trx_range<T>(
+        trx: &foundationdb::RetryableTransaction,
+        index_name: &str,
+        query: RangeQuery<T>,
+        ignore_first_result: bool,
+    ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
+    where
+        T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
 }

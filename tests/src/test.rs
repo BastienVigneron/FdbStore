@@ -4,10 +4,10 @@
 #[cfg(test)]
 mod tests {
     use fdb_derive::FdbStore;
-    use fdb_trait::FdbStore;
-    use fdb_trait::KvError;
+    use fdb_trait::{FdbStore, KvError, RangeQuery};
     use foundationdb::api::NetworkAutoStop;
     use foundationdb::{Database, FdbResult};
+    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
 
     use std::str::FromStr;
@@ -60,9 +60,9 @@ mod tests {
             owner: "Bob".to_string(),
         };
 
-        // Save with indexes
-        ak1.save(db.clone()).await?;
+        // Ak::find_by_unique_index_range(db, index_name, start, stop)
 
+        ak1.save(db.clone()).await?;
         // Load from fdb to check equality
         let r = Ak::load(db.clone(), &"4H2EKB28NOXPF6K40QOT").await?;
         assert!(r == ak1);
@@ -213,6 +213,115 @@ mod tests {
         // Check Alice has only one Ak with the good id
         let r = Ak::find_by_index(db.clone(), "owner", "Alice".to_string()).await?;
         assert!(r.len() == 1 && r.first().unwrap().id == *"4H2EKB28NOXPF6K40QOT");
+
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_04_range_uniq_index_query() -> Result<(), KvError> {
+        let db = setup_database().await?;
+
+        let ak1 = Ak {
+            id: "".to_string(),
+            sk: "".to_string(),
+            state: "ACTIVE".to_string(),
+            tags: None,
+            marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+            trusted: true,
+            owner: "Bob".to_string(),
+        };
+
+        let aks: Vec<Ak> = (1..20)
+            .map(|i| Ak {
+                id: format!("id-{:?}", i),
+                sk: format!("sk-{:?}", i),
+                marker: ulid::Ulid::new(),
+                ..ak1.clone()
+            })
+            .collect();
+
+        for ele in &aks {
+            ele.save(db.clone()).await?;
+        }
+        println!("saved...");
+        aks.iter()
+            .for_each(|ak| println!("id: {:?}, sk: {:?}", ak.id, ak.sk,));
+
+        // test by getting the first 5 items
+        let range =
+            Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+                .await?;
+
+        println!("Range: {:#?}", range);
+        assert!(range.len() == 5);
+        assert!(range.last().unwrap().sk == *"sk-5");
+
+        // test by getting in range (between start and stop)
+        let range = Ak::find_by_unique_index_range_sk(
+            db.clone(),
+            RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
+            false,
+        )
+        .await?;
+        println!("Range: {:#?}", range);
+
+        assert!(range.len() == 5);
+
+        // test by getting all
+        let range = Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::All, false).await?;
+        println!("Range: {:#?}", range);
+        assert!(range.len() == 19);
+        assert!(range.last() == aks.last());
+
+        // test getting 10 result from "sk-5"
+        let range = Ak::find_by_unique_index_range_sk(
+            db.clone(),
+            RangeQuery::StartAndNbResult("sk-5".to_owned(), 10),
+            false,
+        )
+        .await?;
+        println!("Range: {:#?}", range);
+        assert!(range.len() == 10);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn test_05_range_primary_index_query() -> Result<(), KvError> {
+        let db = setup_database().await?;
+
+        let ak1 = Ak {
+            id: "".to_string(),
+            sk: "".to_string(),
+            state: "ACTIVE".to_string(),
+            tags: None,
+            marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+            trusted: true,
+            owner: "Bob".to_string(),
+        };
+
+        let aks: Vec<Ak> = (1..20)
+            .map(|i| Ak {
+                id: format!("id-{:?}", i),
+                sk: format!("sk-{:?}", i),
+                marker: ulid::Ulid::new(),
+                ..ak1.clone()
+            })
+            .collect();
+
+        for ele in &aks {
+            ele.save(db.clone()).await?;
+        }
+        println!("saved...");
+
+        let all = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
+        assert!(all.len() == 19);
+
+        let range1 = Ak::load_by_primary_range(
+            db.clone(),
+            RangeQuery::StartAndStop("id-3".to_owned(), "id-6".to_owned()),
+        )
+        .await?;
+        assert!(range1.len() == 3);
 
         Ok(())
     }

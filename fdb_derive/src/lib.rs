@@ -100,6 +100,57 @@ ak1.update(db.clone(), ak_updated.clone()).await?;
 
 // And finally delete it
 ak1.delete(db.clone()).await?;
+
+// You can also manage range query either on primary key or uniq indexes
+let ak1 = Ak {
+    id: "".to_string(),
+    sk: "".to_string(),
+    state: "ACTIVE".to_string(),
+    tags: None,
+    marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+    trusted: true,
+    owner: "Bob".to_string(),
+};
+let aks: Vec<Ak> = (1..20)
+    .map(|i| Ak {
+        id: format!("id-{:?}", i),
+        sk: format!("sk-{:?}", i),
+        marker: ulid::Ulid::new(),
+        ..ak1.clone()
+    })
+    .collect();
+for ele in &aks {
+    ele.save(db.clone()).await?;
+}
+println!("saved...");
+
+let range =
+    Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+        .await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+assert!(range.last().unwrap().sk == *"sk-5");
+
+// test by getting in range (between start and stop)
+let range = Ak::find_by_unique_index_range_sk(
+    db.clone(),
+    RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
+    false,
+)
+.await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+
+// Or getting by primary key range
+let all = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
+assert!(all.len() == 19);
+
+let range1 = Ak::load_by_primary_range(
+    db.clone(),
+    RangeQuery::StartAndStop("id-3".to_owned(), "id-6".to_owned()),
+)
+.await?;
+assert!(range1.len() == 3);
 ```
 
 Checkout tests in `/tests/src/test.rs` for more examples.
@@ -110,7 +161,6 @@ Any kind of type can be used as a primary key / secondary index as long as it im
 - `FdbStore` doesn't (yet) manage key or value splitting if a key exceeds 10,000 bytes or a value exceeds 100,000 bytes (after serialization).
 - `FdbStore` doesn't (yet) manage large transactions (I.E. transaction that exceed 10,000,000 bytes of affected data).
 - `FdbStore` doesn't (yet) manage data encryption.
-- `FdbStore` doesn't (yet) manage range queries.
 - `FdbStore` doesn't (yet) manage multi-tenancy.
 
 */
@@ -296,7 +346,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                             Ok(value)
                         }
                         None => Err(foundationdb::FdbBindingError::new_custom_error(Box::new(
-                            fdb_trait::KvError::FdbMissingIndex,
+                            fdb_trait::KvError::FdbPrimaryKeyValueNotFound,
                         ))),
                     }?;
                     results.push(value);
@@ -391,15 +441,115 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
+    let load_by_unique_index_methods_in_trx = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("load_by_{}_in_trx", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Self, foundationdb::FdbBindingError> {
+                Self::find_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
+            }
+        }
+    });
+
+    // Generate helper methods for getting by ranges on uniq indexes
+    let getting_by_range_methods = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("find_by_unique_index_range_{}", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, fdb_trait::KvError> {
+                Self::find_by_unique_index_range::<#field_type>(db, stringify!(#field_name), query, ignore_first_result).await
+            }
+        }
+    });
+
+    let getting_by_range_methods_in_trx = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("find_by_unique_index_range_{}_in_trx", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
+                Self::find_by_unique_index_in_trx_range::<#field_type>(trx, stringify!(#field_name), query, ignore_first_result).await
+            }
+        }
+    });
+
+    // Generate helper methods for getting by ranges on primary keys
+    let getting_by_primary_range_methods = {
+        let method_name = "load_by_primary_range".to_string();
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &primary_key_field.ty;
+
+        quote! {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>) -> Result<Vec<Self>, fdb_trait::KvError> {
+                Self::load_by_range(db, query).await
+            }
+        }
+    };
+
+    // Generate helper methods for getting by ranges on primary keys in tx
+    let getting_by_primary_range_in_trx_methods = {
+        let method_name = "load_by_primary_range_in_trx".to_string();
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &primary_key_field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, query: fdb_trait::RangeQuery<#field_type>) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
+                Self::load_by_range_in_trx(trx, query).await
+            }
+        }
+    };
+
+    // Get keys as bytes
+    let get_unique_index_key_as_bytes = unique_index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let index_name = field_name.as_ref().unwrap().to_string();
+        let name = name.to_string();
+        let method_name = format!("get_bytes_key_{}", field_name.as_ref().unwrap());
+        let method_ident_self = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let method_name_anon = format!("as_bytes_key_{}", field_name.as_ref().unwrap());
+        let method_ident_anon = syn::Ident::new(&method_name_anon, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub fn #method_ident_self(&self) -> Result<Vec<u8>, fdb_trait::KvError> {
+                let index_key = format!("store:{}:unique_index:{}:", #name, #index_name);
+                let mut index_key_bytes = index_key.into_bytes();
+                let index_value = rmp_serde::to_vec(&self.#field_name).map_err(|e| {
+                   fdb_trait::KvError::EncodeError(e)
+                })?;
+                index_key_bytes.extend(index_value);
+                Ok(index_key_bytes)
+            }
+
+            pub fn #method_ident_anon(value: #field_type) -> Result<Vec<u8>, fdb_trait::KvError> {
+                let index_key = format!("store:{}:unique_index:{}:", #name, #index_name);
+                let mut index_key_bytes = index_key.into_bytes();
+                let index_value = rmp_serde::to_vec(&value).map_err(|e| {
+                   fdb_trait::KvError::EncodeError(e)
+                })?;
+                index_key_bytes.extend(index_value);
+                Ok(index_key_bytes)
+            }
+        }
+    });
+
     // Implement FdbStore trait
     let expanded = quote! {
 
         /// Convert to `store:{struct_name}:{primary_key_value_in_MsgPack}`
-        fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, fdb_trait::KvError>
+        pub fn #as_fdb_primary_key_fn_name<T>(input_key: &T) -> Result<Vec<u8>, fdb_trait::KvError>
         where
             T: Serialize + Sync + Sized,
         {
-            let index_key = format!("store:{}:", stringify!(#name));
+            let index_key = format!("store:{}:primary:", stringify!(#name));
             let mut key_bytes = index_key.into_bytes();
             let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
             key_bytes.extend(key);
@@ -448,6 +598,91 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 }
                 .await
             }
+
+            /// Load struct from FDB via primary key range identified by `fdb_key` attribute
+            async fn load_by_range<T>(
+                db: Arc<Database>,
+                query: fdb_trait::RangeQuery<T>,
+            ) -> Result<Vec<Self>, KvError>
+            where
+                T: Serialize + Sync + Sized + std::marker::Send + Clone
+            {
+                let value = db.run(|trx, _maybe_comitted| {
+                    let query = query.clone();
+                    async move {
+                        Self::load_by_range_in_trx(&trx, query).await
+                    }
+                })
+                .await;
+                value.map_err(fdb_trait::KvError::FdbCommitError)
+            }
+
+            /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
+            async fn load_by_range_in_trx<T>(
+                trx: &foundationdb::RetryableTransaction,
+                query: fdb_trait::RangeQuery<T>,
+            ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
+            where
+                T: Serialize + Sync + Sized + std::marker::Send,
+            {
+                let index_name = format!("store:{}:primary:", stringify!(#name));
+                let end_end_key = [index_name.as_bytes(), &[0xFF]].concat();
+
+                async move {
+                    let range_option: foundationdb::RangeOption = match query {
+                        RangeQuery::StartAndStop(start, stop) => {
+                            let start_index_value = #as_fdb_primary_key_fn_name(&start)?;
+                            let stop_index_value = #as_fdb_primary_key_fn_name(&stop)?;
+
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((
+                                    start_index_value,
+                                    stop_index_value,
+                                ))
+                            }
+                        }
+                        RangeQuery::StartAndNbResult(start, nb_results) => {
+                            let start_index_value = #as_fdb_primary_key_fn_name(&start)?;
+
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_index_value, end_end_key))
+                            }
+                        }
+                        RangeQuery::NFirstResults(nb_results) => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                        RangeQuery::All => {
+                            let start_key = index_name.into_bytes();
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                    };
+
+                    let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
+                    let mut results: Vec<Self> = Vec::new();
+                    for ele in iter {
+                        match rmp_serde::from_slice(ele.value()) {
+                            Ok(r) => {
+                                results.push(r);
+                            }
+                            Err(err) => {
+                                return Err(foundationdb::FdbBindingError::CustomError(Box::new(
+                                    fdb_trait::KvError::DecodeError(err),
+                                )));
+                            }
+                        };
+                    }
+                    Ok(results)
+                }
+                .await
+            }
+
 
             async fn save(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<(), fdb_trait::KvError> {
                 let commit = db.run(|trx, _maybe_comitted| async move {
@@ -617,11 +852,140 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     Ok(value)
                 }.await
             }
+
+            /// Find records by secondary uniq index in a given range.
+            async fn find_by_unique_index_range<T>(
+                db: Arc<Database>,
+                index_name: &str,
+                query: fdb_trait::RangeQuery<T>,
+                ignore_first_result: bool,
+            ) -> Result<Vec<Self>, fdb_trait::KvError>
+            where
+                T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone {
+                let value = db.run(|trx, _maybe_comitted| {
+                    let index_name = index_name.clone();
+                    let query = query.clone();
+                    async move {
+                        Self::find_by_unique_index_in_trx_range(&trx, index_name, query, ignore_first_result).await
+                    }
+                })
+                .await;
+                value.map_err(fdb_trait::KvError::FdbCommitError)
+            }
+
+            /// Find records by secondary uniq index in a given range
+            async fn find_by_unique_index_in_trx_range<T>(
+                trx: &foundationdb::RetryableTransaction,
+                index_name: &str,
+                query: fdb_trait::RangeQuery<T>,
+                ignore_first_result: bool,
+            ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
+            where
+                T: Serialize + DeserializeOwned  + Sync + Sized + Send + Clone{
+                async move {
+                    let index_name =
+                        format!("store:{}:unique_index:{}:", stringify!(#name), index_name);
+                    let mut start_index_key_bytes = index_name.clone().into_bytes();
+                    let mut stop_index_key_bytes = index_name.clone().into_bytes();
+                    let index_bytes_first_part_len = start_index_key_bytes.len();
+                    let binding = [index_name.as_bytes(), &[0xFF]].concat();
+                    let end_end_key = binding.as_slice();
+
+                    let range_option: foundationdb::RangeOption = match query {
+                        RangeQuery::StartAndStop(start, stop) => {
+                            let start_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&start).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        fdb_trait::KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            start_index_key_bytes.extend(start_index_value);
+
+                            let stop_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&stop).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        fdb_trait::KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            stop_index_key_bytes.extend(stop_index_value);
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((
+                                    start_index_key_bytes.as_slice(),
+                                    stop_index_key_bytes.as_slice(),
+                                ))
+                            }
+                        }
+                        RangeQuery::StartAndNbResult(start, nb_results) => {
+                            let start_index_value: Vec<u8> =
+                                rmp_serde::to_vec(&start).map_err(|e| {
+                                    foundationdb::FdbBindingError::CustomError(Box::new(
+                                        fdb_trait::KvError::EncodeError(e),
+                                    ))
+                                })?;
+                            start_index_key_bytes.extend(start_index_value);
+                            let start_key = start_index_key_bytes.as_slice();
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                        RangeQuery::NFirstResults(nb_results) => {
+                            let start_key = start_index_key_bytes.as_slice();
+                            foundationdb::RangeOption {
+                                limit: Some(nb_results),
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                        RangeQuery::All => {
+                            let start_key = start_index_key_bytes.as_slice();
+                            foundationdb::RangeOption {
+                                ..foundationdb::RangeOption::from((start_key, end_end_key))
+                            }
+                        }
+                    };
+
+                    let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
+
+                    // Retrieve `Self` values from secondary indexes
+                    let mut results: Vec<Self> = Vec::new();
+                    for ele in iter {
+                        let value = trx
+                            .get(ele.value(), false)
+                            .await?
+                            .ok_or_else(|| fdb_trait::KvError::Empty)?;
+                        match rmp_serde::from_slice(&value) {
+                            Ok(r) => {
+                                results.push(r);
+                            }
+                            Err(e) => {
+                                return Err(foundationdb::FdbBindingError::CustomError(Box::new(
+                                    fdb_trait::KvError::DecodeError(e),
+                                )));
+                            }
+                        };
+                    }
+
+                    // Remove first element to avoid cover
+                    if ignore_first_result && results.len() > 1 {
+                        results.remove(0);
+                    };
+
+                    Ok(results)
+                }
+                .await
+            }
         }
 
         impl #impl_generics #name #ty_generics #where_clause {
             #(#load_by_unique_index_methods)*
+            #(#load_by_unique_index_methods_in_trx )*
+            #(#get_unique_index_key_as_bytes )*
+            #(#getting_by_range_methods )*
+            #(#getting_by_range_methods_in_trx )*
+            #getting_by_primary_range_methods
+            #getting_by_primary_range_in_trx_methods
         }
+
     };
 
     TokenStream::from(expanded)
