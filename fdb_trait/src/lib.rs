@@ -117,7 +117,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         index_name: &str,
         query: RangeQuery<T>,
         ignore_first_result: bool,
-    ) -> Result<(Vec<Self>, Option<T>), KvError>
+    ) -> Result<Vec<Self>, KvError>
     where
         T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
     /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
@@ -126,15 +126,13 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         index_name: &str,
         query: RangeQuery<T>,
         ignore_first_result: bool,
-    ) -> Result<(Vec<Self>, Option<T>), foundationdb::FdbBindingError>
+    ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
     where
         T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
 }
 
 #[cfg(test)]
 mod tests {
-
-    use std::ascii::AsciiExt;
 
     use serde::Deserialize;
 
@@ -357,7 +355,7 @@ mod tests {
                 index_name: &str,
                 query: RangeQuery<T>,
                 ignore_first_result: bool,
-            ) -> Result<(Vec<Self>, Option<T>), KvError>
+            ) -> Result<Vec<Self>, KvError>
             where
                 T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone,
             {
@@ -369,7 +367,7 @@ mod tests {
                 index_name: &str,
                 query: RangeQuery<T>,
                 ignore_first_result: bool,
-            ) -> Result<(Vec<Self>, Option<T>), foundationdb::FdbBindingError>
+            ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
             where
                 T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone,
             {
@@ -439,7 +437,6 @@ mod tests {
 
                     // Retrieve `Self` values from secondary indexes
                     let mut results: Vec<Self> = Vec::new();
-                    let mut last_marker: Option<T> = None;
                     for ele in iter {
                         let value = trx
                             .get(ele.value(), false)
@@ -448,14 +445,6 @@ mod tests {
                         match rmp_serde::from_slice(&value) {
                             Ok(r) => {
                                 results.push(r);
-                                let last_marker_bytes =
-                                    ele.key().split_at(index_bytes_first_part_len).1;
-                                last_marker =
-                                    rmp_serde::from_slice(last_marker_bytes).map_err(|e| {
-                                        foundationdb::FdbBindingError::CustomError(Box::new(
-                                            KvError::DecodeError(e),
-                                        ))
-                                    })?;
                             }
                             Err(e) => {
                                 return Err(foundationdb::FdbBindingError::CustomError(Box::new(
@@ -470,7 +459,7 @@ mod tests {
                         results.remove(0);
                     };
 
-                    Ok((results, last_marker))
+                    Ok(results)
                 }
                 .await
             }

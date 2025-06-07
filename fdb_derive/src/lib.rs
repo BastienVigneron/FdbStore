@@ -399,7 +399,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         let field_type = &field.ty;
 
         quote! {
-            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<(Vec<Self>, Option<#field_type>), fdb_trait::KvError> {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, fdb_trait::KvError> {
                 Self::find_by_unique_index_range::<#field_type>(db, stringify!(#field_name), query, ignore_first_result).await
             }
         }
@@ -771,7 +771,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 index_name: &str,
                 query: fdb_trait::RangeQuery<T>,
                 ignore_first_result: bool,
-            ) -> Result<(Vec<Self>, Option<T>), fdb_trait::KvError>
+            ) -> Result<Vec<Self>, fdb_trait::KvError>
             where
                 T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone {
                 let value = db.run(|trx, _maybe_comitted| {
@@ -791,7 +791,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 index_name: &str,
                 query: fdb_trait::RangeQuery<T>,
                 ignore_first_result: bool,
-            ) -> Result<(Vec<Self>, Option<T>), foundationdb::FdbBindingError>
+            ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
             where
                 T: Serialize + DeserializeOwned  + Sync + Sized + Send + Clone{
                 async move {
@@ -860,7 +860,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
                     // Retrieve `Self` values from secondary indexes
                     let mut results: Vec<Self> = Vec::new();
-                    let mut last_marker: Option<T> = None;
                     for ele in iter {
                         let value = trx
                             .get(ele.value(), false)
@@ -869,14 +868,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         match rmp_serde::from_slice(&value) {
                             Ok(r) => {
                                 results.push(r);
-                                let last_marker_bytes =
-                                    ele.key().split_at(index_bytes_first_part_len).1;
-                                last_marker =
-                                    rmp_serde::from_slice(last_marker_bytes).map_err(|e| {
-                                        foundationdb::FdbBindingError::CustomError(Box::new(
-                                            fdb_trait::KvError::DecodeError(e),
-                                        ))
-                                    })?;
                             }
                             Err(e) => {
                                 return Err(foundationdb::FdbBindingError::CustomError(Box::new(
@@ -891,7 +882,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         results.remove(0);
                     };
 
-                    Ok((results, last_marker))
+                    Ok(results)
                 }
                 .await
             }

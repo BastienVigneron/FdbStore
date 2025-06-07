@@ -257,9 +257,8 @@ mod tests {
         .await?;
 
         println!("Range: {:#?}", range);
-        assert!(range.0.len() == 5);
-        assert!(range.0.last().unwrap().sk == *"sk-5");
-        assert!(range.1 == Some("sk-5".to_owned()));
+        assert!(range.len() == 5);
+        assert!(range.last().unwrap().sk == *"sk-5");
 
         // test by getting in range (between start and stop)
         let range = Ak::find_by_unique_index_range::<String>(
@@ -271,15 +270,15 @@ mod tests {
         .await?;
         println!("Range: {:#?}", range);
 
-        assert!(range.0.len() == 5);
+        assert!(range.len() == 5);
 
         // test by getting all
         let range =
             Ak::find_by_unique_index_range::<String>(db.clone(), "sk", RangeQuery::All, false)
                 .await?;
         println!("Range: {:#?}", range);
-        assert!(range.0.len() == 19);
-        assert!(range.0.last() == aks.last());
+        assert!(range.len() == 19);
+        assert!(range.last() == aks.last());
 
         // test getting 10 result from "sk-5"
         let range = Ak::find_by_unique_index_range_sk(
@@ -289,8 +288,7 @@ mod tests {
         )
         .await?;
         println!("Range: {:#?}", range);
-        assert!(range.0.len() == 10);
-        assert!(range.1 == Some("sk-14".to_owned()));
+        assert!(range.len() == 10);
 
         Ok(())
     }
