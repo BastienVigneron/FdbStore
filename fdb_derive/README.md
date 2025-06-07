@@ -99,6 +99,57 @@ ak1.update(db.clone(), ak_updated.clone()).await?;
 
 // And finally delete it
 ak1.delete(db.clone()).await?;
+
+// You can also manage range query either on primary key or uniq indexes
+let ak1 = Ak {
+    id: "".to_string(),
+    sk: "".to_string(),
+    state: "ACTIVE".to_string(),
+    tags: None,
+    marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+    trusted: true,
+    owner: "Bob".to_string(),
+};
+let aks: Vec<Ak> = (1..20)
+    .map(|i| Ak {
+        id: format!("id-{:?}", i),
+        sk: format!("sk-{:?}", i),
+        marker: ulid::Ulid::new(),
+        ..ak1.clone()
+    })
+    .collect();
+for ele in &aks {
+    ele.save(db.clone()).await?;
+}
+println!("saved...");
+
+let range =
+    Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+        .await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+assert!(range.last().unwrap().sk == *"sk-5");
+
+// test by getting in range (between start and stop)
+let range = Ak::find_by_unique_index_range_sk(
+    db.clone(),
+    RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
+    false,
+)
+.await?;
+println!("Range: {:#?}", range);
+assert!(range.len() == 5);
+
+// Or getting by primary key range
+let all = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
+assert!(all.len() == 19);
+
+let range1 = Ak::load_by_primary_range(
+    db.clone(),
+    RangeQuery::StartAndStop("id-3".to_owned(), "id-6".to_owned()),
+)
+.await?;
+assert!(range1.len() == 3);
 ```
 
 Checkout tests in `/tests/src/test.rs` for more examples.
@@ -109,7 +160,6 @@ Any kind of type can be used as a primary key / secondary index as long as it im
 - `FdbStore` doesn't (yet) manage key or value splitting if a key exceeds 10,000 bytes or a value exceeds 100,000 bytes (after serialization).
 - `FdbStore` doesn't (yet) manage large transactions (I.E. transaction that exceed 10,000,000 bytes of affected data).
 - `FdbStore` doesn't (yet) manage data encryption.
-- `FdbStore` doesn't (yet) manage range queries.
 - `FdbStore` doesn't (yet) manage multi-tenancy.
 
 
