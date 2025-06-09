@@ -171,10 +171,10 @@ checksum = "48c757948c5ede0e46177b7add2e67155f70e33c07fea8284df6576da70b3719"
 
 [[package]]
 name = "fdb_derive"
-version = "0.1.4"
+version = "0.1.5"
 dependencies = [
  "async-trait",
- "fdb_trait 0.1.1 (registry+https://github.com/rust-lang/crates.io-index)",
+ "fdb_trait 0.1.2 (registry+https://github.com/rust-lang/crates.io-index)",
  "proc-macro2",
  "quote",
  "rmp-serde",
@@ -184,7 +184,7 @@ dependencies = [
 
 [[package]]
 name = "fdb_trait"
-version = "0.1.1"
+version = "0.1.2"
 dependencies = [
  "async-trait",
  "foundationdb",
@@ -198,9 +198,9 @@ dependencies = [
 
 [[package]]
 name = "fdb_trait"
-version = "0.1.1"
+version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "d1008f7c8cd9e6a4dd9486f382456b649d09e84c6bd80a2499bb04099c63b7f6"
+checksum = "7f9fbc65ebca7b97957828f733346e278e98f358e487eb6cf1807f12b22b68a0"
 dependencies = [
  "async-trait",
  "foundationdb",
@@ -1003,7 +1003,7 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "fdb_derive",
- "fdb_trait 0.1.1",
+ "fdb_trait 0.1.2",
  "foundationdb",
  "rmp-serde",
  "serde",

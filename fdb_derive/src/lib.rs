@@ -861,7 +861,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 ignore_first_result: bool,
             ) -> Result<Vec<Self>, fdb_trait::KvError>
             where
-                T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone {
+                T: Serialize + Sync + Sized + Send + Clone {
                 let value = db.run(|trx, _maybe_comitted| {
                     let index_name = index_name.clone();
                     let query = query.clone();
@@ -881,7 +881,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 ignore_first_result: bool,
             ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
             where
-                T: Serialize + DeserializeOwned  + Sync + Sized + Send + Clone{
+                T: Serialize + Sync + Sized + Send + Clone{
                 async move {
                     let index_name =
                         format!("store:{}:unique_index:{}:", stringify!(#name), index_name);
