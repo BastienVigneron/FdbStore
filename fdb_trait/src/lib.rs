@@ -5,7 +5,7 @@ use std::{fmt, sync::Arc};
 use async_trait::async_trait;
 pub use error::KvError;
 use foundationdb::{Database, FdbBindingError};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 
 /// RangeQuery:
 /// - StartAndStop: find value between start (inclusive) and stop (exclusive)
