@@ -7,7 +7,6 @@ mod tests {
     use fdb_trait::{FdbStore, KvError, RangeQuery};
     use foundationdb::api::NetworkAutoStop;
     use foundationdb::{Database, FdbResult};
-    use serde::de::DeserializeOwned;
     use serde::{Deserialize, Serialize};
 
     use std::str::FromStr;

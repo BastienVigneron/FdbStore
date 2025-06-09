@@ -5,7 +5,7 @@ use std::{fmt, sync::Arc};
 use async_trait::async_trait;
 pub use error::KvError;
 use foundationdb::{Database, FdbBindingError};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::Serialize;
 
 /// RangeQuery:
 /// - StartAndStop: find value between start (inclusive) and stop (exclusive)
@@ -119,7 +119,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         ignore_first_result: bool,
     ) -> Result<Vec<Self>, KvError>
     where
-        T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
+        T: Serialize + Sync + Sized + Send + Clone;
     /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
     async fn find_by_unique_index_in_trx_range<T>(
         trx: &foundationdb::RetryableTransaction,
@@ -128,5 +128,5 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         ignore_first_result: bool,
     ) -> Result<Vec<Self>, foundationdb::FdbBindingError>
     where
-        T: Serialize + DeserializeOwned + Sync + Sized + Send + Clone;
+        T: Serialize + Sync + Sized + Send + Clone;
 }
