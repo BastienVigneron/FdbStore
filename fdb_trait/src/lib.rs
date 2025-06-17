@@ -78,7 +78,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     ) -> Result<(), FdbBindingError>;
 
     /// Find records by secondary index, the index are stored in the form key: fdb_index -> value: Vec<fdb_key>
-    async fn find_by_index<T>(
+    async fn load_by_index<T>(
         db: Arc<Database>,
         index_name: &str,
         index_value: T,
@@ -86,7 +86,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     where
         T: Serialize + Sync + Sized + Send + Clone;
     /// Find records by secondary index, the index are stored in the form key: fdb_index -> value: Vec<fdb_key> in an existing transaction context
-    async fn find_by_index_in_trx<T>(
+    async fn load_by_index_in_trx<T>(
         trx: &foundationdb::RetryableTransaction,
         index_name: &str,
         index_value: T,
@@ -95,7 +95,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         T: Serialize + Sync + Sized + Send + Clone;
 
     /// Find records by secondary uniq index, the index are stored in the form key: fdb_unique_index -> value: fdb_key
-    async fn find_by_unique_index<T>(
+    async fn load_by_unique_index<T>(
         db: Arc<Database>,
         index_name: &str,
         index_value: T,
@@ -103,7 +103,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     where
         T: Serialize + Sync + Sized + Send + Clone;
     /// Find records by secondary uniq index, the index are stored in the form key: fdb_unique_index -> value: fdb_key in an existing transaction context
-    async fn find_by_unique_index_in_trx<T>(
+    async fn load_by_unique_index_in_trx<T>(
         trx: &foundationdb::RetryableTransaction,
         index_name: &str,
         index_value: T,
@@ -112,7 +112,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
         T: Serialize + Sync + Sized + Send + Clone;
 
     /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
-    async fn find_by_unique_index_range<T>(
+    async fn load_by_unique_index_range<T>(
         db: Arc<Database>,
         index_name: &str,
         query: RangeQuery<T>,
@@ -121,7 +121,7 @@ pub trait FdbStore: Send + Sync + fmt::Debug + Sized + Clone {
     where
         T: Serialize + Sync + Sized + Send + Clone;
     /// Find records by secondary uniq index in a given range, if `stop` is `None`, the range goes to the end
-    async fn find_by_unique_index_in_trx_range<T>(
+    async fn load_by_unique_index_in_trx_range<T>(
         trx: &foundationdb::RetryableTransaction,
         index_name: &str,
         query: RangeQuery<T>,

@@ -59,7 +59,7 @@ mod tests {
             owner: "Bob".to_string(),
         };
 
-        // Ak::find_by_unique_index_range(db, index_name, start, stop)
+        // Ak::load_by_unique_index_range(db, index_name, start, stop)
 
         ak1.save(db.clone()).await?;
         // Load from fdb to check equality
@@ -90,7 +90,7 @@ mod tests {
         assert_eq!(ak2, recorded_ak2);
 
         // Check Bob has two aks
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 2);
 
         // Try to record another ak with the same marker must lead to error
@@ -136,14 +136,14 @@ mod tests {
         ak2.save(db.clone()).await?;
 
         // Check Bob has now two ak
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 2);
 
         // Delete ak1
         ak1.delete(db.clone()).await?;
 
         // Check Bob has now only one ak
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 1);
 
         // Check ak1 is not available from secondary index by using named method
@@ -188,7 +188,7 @@ mod tests {
         ak2.save(db.clone()).await?;
 
         // Check Bob has now two ak
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 2);
 
         // Update ak1
@@ -206,11 +206,11 @@ mod tests {
         assert!(r == ak_updated && r.state == *"LOCKED");
 
         // Check Bob has only one remaining Ak
-        let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
         assert!(r.len() == 1);
 
         // Check Alice has only one Ak with the good id
-        let r = Ak::find_by_index(db.clone(), "owner", "Alice".to_string()).await?;
+        let r = Ak::load_by_index(db.clone(), "owner", "Alice".to_string()).await?;
         assert!(r.len() == 1 && r.first().unwrap().id == *"4H2EKB28NOXPF6K40QOT");
 
         Ok(())
@@ -248,7 +248,7 @@ mod tests {
 
         // test by getting the first 5 items
         let range =
-            Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+            Ak::load_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
                 .await?;
 
         println!("Range: {:#?}", range);
@@ -256,7 +256,7 @@ mod tests {
         assert!(range.last().unwrap().sk == *"sk-5");
 
         // test by getting in range (between start and stop)
-        let range = Ak::find_by_unique_index_range_sk(
+        let range = Ak::load_by_unique_index_range_sk(
             db.clone(),
             RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
             false,
@@ -267,13 +267,13 @@ mod tests {
         assert!(range.len() == 5);
 
         // test by getting all
-        let range = Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::All, false).await?;
+        let range = Ak::load_by_unique_index_range_sk(db.clone(), RangeQuery::All, false).await?;
         println!("Range: {:#?}", range);
         assert!(range.len() == 19);
         assert!(range.last() == aks.last());
 
         // test getting 10 result from "sk-5"
-        let range = Ak::find_by_unique_index_range_sk(
+        let range = Ak::load_by_unique_index_range_sk(
             db.clone(),
             RangeQuery::StartAndNbResult("sk-5".to_owned(), 10),
             false,

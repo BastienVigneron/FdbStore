@@ -86,7 +86,7 @@ let recorded_ak1 = Ak::load(db.clone(), &"4H2EKB28NOXPF6K40QOT").await?;
 let r = Ak::load_by_sk(db.clone(),"EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),).await?;
 
 // Or by any multiple secondary index
-let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
 
 // Update ak1
 let new_marker = Ulid::new();
@@ -125,14 +125,14 @@ for ele in &aks {
 println!("saved...");
 
 let range =
-    Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+    Ak::load_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
         .await?;
 println!("Range: {:#?}", range);
 assert!(range.len() == 5);
 assert!(range.last().unwrap().sk == *"sk-5");
 
 // test by getting in range (between start and stop)
-let range = Ak::find_by_unique_index_range_sk(
+let range = Ak::load_by_unique_index_range_sk(
     db.clone(),
     RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
     false,
@@ -296,7 +296,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let create_unique_index_keys_for_trx = create_unique_index_keys.clone();
 
     // Generate code for searching from index
-    let find_by_index_keys_in_trx = {
+    let load_by_index_keys_in_trx = {
         let name = name.to_string();
         let primary_field_type = &primary_key_field.ty;
 
@@ -436,7 +436,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
         quote! {
             pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, value: #field_type) -> Result<Self, fdb_trait::KvError> {
-                Self::find_by_unique_index(db, stringify!(#field_name), value).await
+                Self::load_by_unique_index(db, stringify!(#field_name), value).await
             }
         }
     });
@@ -449,7 +449,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
         quote! {
             pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Self, foundationdb::FdbBindingError> {
-                Self::find_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
+                Self::load_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
             }
         }
     });
@@ -457,26 +457,26 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     // Generate helper methods for getting by ranges on uniq indexes
     let getting_by_range_methods = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
-        let method_name = format!("find_by_unique_index_range_{}", field_name.as_ref().unwrap());
+        let method_name = format!("load_by_unique_index_range_{}", field_name.as_ref().unwrap());
         let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
         let field_type = &field.ty;
 
         quote! {
             pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, fdb_trait::KvError> {
-                Self::find_by_unique_index_range::<#field_type>(db, stringify!(#field_name), query, ignore_first_result).await
+                Self::load_by_unique_index_range::<#field_type>(db, stringify!(#field_name), query, ignore_first_result).await
             }
         }
     });
 
     let getting_by_range_methods_in_trx = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
-        let method_name = format!("find_by_unique_index_range_{}_in_trx", field_name.as_ref().unwrap());
+        let method_name = format!("load_by_unique_index_range_{}_in_trx", field_name.as_ref().unwrap());
         let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
         let field_type = &field.ty;
 
         quote! {
             pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, query: fdb_trait::RangeQuery<#field_type>, ignore_first_result: bool) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
-                Self::find_by_unique_index_in_trx_range::<#field_type>(trx, stringify!(#field_name), query, ignore_first_result).await
+                Self::load_by_unique_index_in_trx_range::<#field_type>(trx, stringify!(#field_name), query, ignore_first_result).await
             }
         }
     });
@@ -759,7 +759,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
 
 
-            async fn find_by_index<T>(
+            async fn load_by_index<T>(
                 db: std::sync::Arc<foundationdb::Database>,
                 index_name: &str,
                 index_value: T,
@@ -770,14 +770,14 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                  let results = db.run(|trx, _maybe_comitted| {
                     let index_value = index_value.clone();
                     async move {
-                        Self::find_by_index_in_trx(&trx, index_name, index_value).await
+                        Self::load_by_index_in_trx(&trx, index_name, index_value).await
                     }
                 })
                 .await?;
                 Ok(results)
             }
 
-            async fn find_by_index_in_trx<T>(
+            async fn load_by_index_in_trx<T>(
                 trx: &foundationdb::RetryableTransaction,
                 index_name: &str,
                 index_value: T,
@@ -785,11 +785,11 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             where
                 T: Serialize + Sync + Sized + Send + Clone,
             {
-                #find_by_index_keys_in_trx.await
+                #load_by_index_keys_in_trx.await
             }
 
 
-            async fn find_by_unique_index<T>(
+            async fn load_by_unique_index<T>(
                 db: std::sync::Arc<foundationdb::Database>,
                 index_name: &str,
                 index_value: T,
@@ -800,14 +800,14 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 let value = db.run(|trx, _maybe_comitted| {
                     let index_value = index_value.clone();
                     async move {
-                        Self::find_by_unique_index_in_trx(&trx, index_name, index_value).await
+                        Self::load_by_unique_index_in_trx(&trx, index_name, index_value).await
                     }
                 })
                 .await;
                 value.map_err(fdb_trait::KvError::FdbCommitError)
             }
 
-            async fn find_by_unique_index_in_trx<T>(
+            async fn load_by_unique_index_in_trx<T>(
                 trx: &foundationdb::RetryableTransaction,
                 index_name: &str,
                 index_value: T,
@@ -854,7 +854,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
 
             /// Find records by secondary uniq index in a given range.
-            async fn find_by_unique_index_range<T>(
+            async fn load_by_unique_index_range<T>(
                 db: Arc<Database>,
                 index_name: &str,
                 query: fdb_trait::RangeQuery<T>,
@@ -866,7 +866,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                     let index_name = index_name.clone();
                     let query = query.clone();
                     async move {
-                        Self::find_by_unique_index_in_trx_range(&trx, index_name, query, ignore_first_result).await
+                        Self::load_by_unique_index_in_trx_range(&trx, index_name, query, ignore_first_result).await
                     }
                 })
                 .await;
@@ -874,7 +874,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
 
             /// Find records by secondary uniq index in a given range
-            async fn find_by_unique_index_in_trx_range<T>(
+            async fn load_by_unique_index_in_trx_range<T>(
                 trx: &foundationdb::RetryableTransaction,
                 index_name: &str,
                 query: fdb_trait::RangeQuery<T>,
