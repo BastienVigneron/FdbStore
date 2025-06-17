@@ -85,7 +85,7 @@ let recorded_ak1 = Ak::load(db.clone(), &"4H2EKB28NOXPF6K40QOT").await?;
 let r = Ak::load_by_sk(db.clone(),"EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),).await?;
 
 // Or by any multiple secondary index
-let r = Ak::find_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
 
 // Update ak1
 let new_marker = Ulid::new();
@@ -124,14 +124,14 @@ for ele in &aks {
 println!("saved...");
 
 let range =
-    Ak::find_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
+    Ak::load_by_unique_index_range_sk(db.clone(), RangeQuery::NFirstResults(5), false)
         .await?;
 println!("Range: {:#?}", range);
 assert!(range.len() == 5);
 assert!(range.last().unwrap().sk == *"sk-5");
 
 // test by getting in range (between start and stop)
-let range = Ak::find_by_unique_index_range_sk(
+let range = Ak::load_by_unique_index_range_sk(
     db.clone(),
     RangeQuery::StartAndStop("sk-4".to_owned(), "sk-9".to_owned()),
     false,
