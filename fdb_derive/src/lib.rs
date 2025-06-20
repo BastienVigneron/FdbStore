@@ -169,7 +169,10 @@ use proc_macro::TokenStream;
 use quote::quote;
 use syn::{Data, DeriveInput, Fields, parse_macro_input};
 
-#[proc_macro_derive(FdbStore, attributes(fdb_key, fdb_index, fdb_unique_index))]
+#[proc_macro_derive(
+    FdbStore,
+    attributes(fdb_key, fdb_index, fdb_unique_index, fdb_foreign_key)
+)]
 pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let input = parse_macro_input!(input as DeriveInput);
     let name = &input.ident;
@@ -196,7 +199,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         .expect("No primary key field found. Use #[fdb_key] attribute to specify a primary key");
 
     let primary_key_ident = &primary_key_field.ident;
-
+    let primary_key_type = &primary_key_field.ty;
     // Find index and unique_index fields
     let index_fields: Vec<_> = fields
         .iter()
@@ -215,6 +218,16 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 .attrs
                 .iter()
                 .any(|attr| attr.path.is_ident("fdb_unique_index"))
+        })
+        .collect();
+
+    let foreign_key_fields: Vec<_> = fields
+        .iter()
+        .filter(|field| {
+            field
+                .attrs
+                .iter()
+                .any(|attr| attr.path.is_ident("fdb_foreign_key"))
         })
         .collect();
 
@@ -441,6 +454,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         }
     });
 
+    // Generate helper methods for loading by unique indexes in transaction
     let load_by_unique_index_methods_in_trx = unique_index_fields.iter().map(|field| {
         let field_name = &field.ident;
         let method_name = format!("load_by_{}_in_trx", field_name.as_ref().unwrap());
@@ -450,6 +464,49 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         quote! {
             pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Self, foundationdb::FdbBindingError> {
                 Self::load_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
+            }
+        }
+    });
+
+    let load_by_foreign_key_methods = foreign_key_fields.iter().map(|field|{
+        let field_name = &field.ident;
+        let field_type = &field.ty;
+        let method_name = format!("load_by_foreign_{}", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<#field_type, fdb_trait::KvError> {
+                let value = self.#field_name.get_primary_key_value();
+                #field_type::load(db, value).await
+            }
+        }
+    });
+
+    // Generate helper methods for loading by multiple indexes
+    let load_by_index_methods = index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("load_by_{}", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(db: std::sync::Arc<foundationdb::Database>, value: #field_type) -> Result<Vec<Self>, fdb_trait::KvError> {
+                Self::load_by_index(db, stringify!(#field_name), value).await
+            }
+        }
+    });
+
+    // Generate helper methods for loading by indexes in transaction
+    let load_by_index_methods_in_trx = index_fields.iter().map(|field| {
+        let field_name = &field.ident;
+        let method_name = format!("load_by_{}_in_trx", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let field_type = &field.ty;
+
+        quote! {
+            pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Vec<Self>, foundationdb::FdbBindingError> {
+                Self::load_by_index_in_trx(trx, stringify!(#field_name), value).await
             }
         }
     });
@@ -554,6 +611,12 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             let key: Vec<u8> = rmp_serde::to_vec(input_key)?;
             key_bytes.extend(key);
             Ok(key_bytes)
+        }
+
+        impl #name {
+            pub fn get_primary_key_value(&self) -> &#primary_key_type {
+                &self.#primary_key_ident
+            }
         }
 
         #[automatically_derived]
@@ -979,6 +1042,9 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         impl #impl_generics #name #ty_generics #where_clause {
             #(#load_by_unique_index_methods)*
             #(#load_by_unique_index_methods_in_trx )*
+            #(#load_by_index_methods)*
+            #(#load_by_index_methods_in_trx )*
+            #(#load_by_foreign_key_methods)*
             #(#get_unique_index_key_as_bytes )*
             #(#getting_by_range_methods )*
             #(#getting_by_range_methods_in_trx )*

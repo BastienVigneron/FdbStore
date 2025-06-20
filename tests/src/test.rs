@@ -29,6 +29,14 @@ mod tests {
         Ok(db)
     }
 
+    #[derive(Debug, Serialize, Deserialize, FdbStore, PartialEq, Clone)]
+    struct Owner {
+        #[fdb_key]
+        id: String,
+        state: u16,
+        full_name: String,
+    }
+
     // sample struct to persist
     #[derive(Debug, Serialize, Deserialize, FdbStore, PartialEq, Clone)]
     struct Ak {
@@ -43,11 +51,19 @@ mod tests {
         trusted: bool,
         #[fdb_index]
         owner: String,
+        #[fdb_foreign_key]
+        full_owner: Owner,
     }
 
     #[tokio::test]
     async fn test_01_save() -> Result<(), KvError> {
         let db = setup_database().await?;
+
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
 
         let ak1 = Ak {
             id: "4H2EKB28NOXPF6K40QOT".to_string(),
@@ -57,10 +73,10 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
 
         // Ak::load_by_unique_index_range(db, index_name, start, stop)
-
         ak1.save(db.clone()).await?;
         // Load from fdb to check equality
         let r = Ak::load(db.clone(), &"4H2EKB28NOXPF6K40QOT").await?;
@@ -74,6 +90,9 @@ mod tests {
         .await?;
         assert!(r == ak1);
 
+        let owner = ak1.load_by_foreign_full_owner(db.clone()).await;
+        println!("Owner retrieved by foreign key: {:#?}", owner);
+
         // Save a second one
         let ak2 = Ak {
             id: "CKLTKHSLP99NZANMG9RK".to_string(),
@@ -83,6 +102,7 @@ mod tests {
             marker: Ulid::from_str("01JSPW068HWN9RQH5WCTWXHM2W").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
 
         ak2.save(db.clone()).await?;
@@ -102,6 +122,7 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
         let r = ak3.save(db.clone()).await;
         assert!(r.is_err());
@@ -112,6 +133,12 @@ mod tests {
     async fn test_02_delete() -> Result<(), KvError> {
         let db = setup_database().await?;
 
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
+
         let ak1 = Ak {
             id: "4H2EKB28NOXPF6K40QOT".to_string(),
             sk: "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
@@ -120,6 +147,7 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
         ak1.save(db.clone()).await?;
 
@@ -132,6 +160,7 @@ mod tests {
             marker: Ulid::from_str("01JSPW068HWN9RQH5WCTWXHM2W").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
         ak2.save(db.clone()).await?;
 
@@ -143,7 +172,7 @@ mod tests {
         ak1.delete(db.clone()).await?;
 
         // Check Bob has now only one ak
-        let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        let r = Ak::load_by_owner(db.clone(), "Bob".to_string()).await?;
         assert!(r.len() == 1);
 
         // Check ak1 is not available from secondary index by using named method
@@ -164,6 +193,12 @@ mod tests {
     async fn test_03_update() -> Result<(), KvError> {
         let db = setup_database().await?;
 
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
+
         let ak1 = Ak {
             id: "4H2EKB28NOXPF6K40QOT".to_string(),
             sk: "EIMEIGHOH2GA5AEM4TAE6JIEROER0INGOOZEACAI".to_string(),
@@ -172,6 +207,7 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
         ak1.save(db.clone()).await?;
 
@@ -184,6 +220,7 @@ mod tests {
             marker: Ulid::from_str("01JSPW068HWN9RQH5WCTWXHM2W").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
         ak2.save(db.clone()).await?;
 
@@ -220,6 +257,12 @@ mod tests {
     async fn test_04_range_uniq_index_query() -> Result<(), KvError> {
         let db = setup_database().await?;
 
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
+
         let ak1 = Ak {
             id: "".to_string(),
             sk: "".to_string(),
@@ -228,6 +271,7 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
 
         let aks: Vec<Ak> = (1..20)
@@ -288,6 +332,12 @@ mod tests {
     async fn test_05_range_primary_index_query() -> Result<(), KvError> {
         let db = setup_database().await?;
 
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
+
         let ak1 = Ak {
             id: "".to_string(),
             sk: "".to_string(),
@@ -296,6 +346,7 @@ mod tests {
             marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
             trusted: true,
             owner: "Bob".to_string(),
+            full_owner: bob.clone(),
         };
 
         let aks: Vec<Ak> = (1..20)
