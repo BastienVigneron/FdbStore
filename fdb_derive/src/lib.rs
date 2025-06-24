@@ -179,7 +179,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
     let lower_name = name.to_string().to_lowercase();
 
     let (impl_generics, ty_generics, where_clause) = input.generics.split_for_impl();
-
     let as_fdb_primary_key_fn_name =
         syn::Ident::new(&format!("{}_as_fdb_primary_key", lower_name), name.span());
 
@@ -230,6 +229,12 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 .any(|attr| attr.path.is_ident("fdb_foreign_key"))
         })
         .collect();
+
+    // Check absence of circular reference on foreign key(s)
+    // foreign_key_fields.iter().map(|f| {
+    //     let foreign_type = &f.ty;
+    //     foreign_type:
+    // });
 
     // Generate code for creating index keys
     let create_index_keys = index_fields.iter().map(|field| {
@@ -470,9 +475,8 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
 
     let load_by_foreign_key_methods = foreign_key_fields.iter().map(|field|{
         let field_name = &field.ident;
-        let field_type = &field.ty;
-        let method_name = format!("load_by_foreign_{}", field_name.as_ref().unwrap());
-        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
+        let load_by_foreign_key_method_name = format!("load_by_foreign_{}", field_name.as_ref().unwrap());
+        let method_ident = syn::Ident::new(&load_by_foreign_key_method_name, proc_macro2::Span::call_site());
         let field_type = &field.ty;
 
         quote! {
@@ -482,6 +486,18 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
         }
     });
+
+    // let get_foreign_types = {
+    //     let types = foreign_key_fields.iter().map(|f| {
+    //         let ty = &f.ty;
+    //         quote! {std::any::TypeId::of::<#ty>()}
+    //     });
+    //     quote! {
+    //         pub fn get_foreign_types(&self) -> Vec<std::any::TypeId> {
+    //             vec![ #(#types),* ]
+    //         }
+    //     }
+    // };
 
     // Generate helper methods for loading by multiple indexes
     let load_by_index_methods = index_fields.iter().map(|field| {
@@ -1050,6 +1066,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             #(#getting_by_range_methods_in_trx )*
             #getting_by_primary_range_methods
             #getting_by_primary_range_in_trx_methods
+            // #get_foreign_types
         }
 
     };

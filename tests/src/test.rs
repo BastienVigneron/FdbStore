@@ -90,6 +90,8 @@ mod tests {
         .await?;
         assert!(r == ak1);
 
+        // let f_types = ak1.get_foreign_types();
+        // println!("Foreign types: {:?}", f_types);
         let owner = ak1.load_by_foreign_full_owner(db.clone()).await;
         println!("Owner retrieved by foreign key: {:#?}", owner);
 
