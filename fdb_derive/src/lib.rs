@@ -221,16 +221,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         })
         .collect();
 
-    let foreign_key_fields: Vec<_> = fields
-        .iter()
-        .filter(|field| {
-            field
-                .attrs
-                .iter()
-                .any(|attr| attr.path.is_ident("fdb_foreign_key"))
-        })
-        .collect();
-
     // Generate code for creating index keys
     let create_index_keys = index_fields.iter().map(|field| {
         let field_name = &field.ident;
@@ -464,21 +454,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
         quote! {
             pub async fn #method_ident(trx: &foundationdb::RetryableTransaction, value: #field_type) -> Result<Self, foundationdb::FdbBindingError> {
                 Self::load_by_unique_index_in_trx(trx, stringify!(#field_name), value).await
-            }
-        }
-    });
-
-    let load_by_foreign_key_methods = foreign_key_fields.iter().map(|field|{
-        let field_name = &field.ident;
-        let field_type = &field.ty;
-        let method_name = format!("load_by_foreign_{}", field_name.as_ref().unwrap());
-        let method_ident = syn::Ident::new(&method_name, proc_macro2::Span::call_site());
-        let field_type = &field.ty;
-
-        quote! {
-            pub async fn #method_ident(&self, db: std::sync::Arc<foundationdb::Database>) -> Result<#field_type, fdb_trait::KvError> {
-                let value = self.#field_name.get_primary_key_value();
-                #field_type::load(db, value).await
             }
         }
     });
@@ -1044,7 +1019,6 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             #(#load_by_unique_index_methods_in_trx )*
             #(#load_by_index_methods)*
             #(#load_by_index_methods_in_trx )*
-            #(#load_by_foreign_key_methods)*
             #(#get_unique_index_key_as_bytes )*
             #(#getting_by_range_methods )*
             #(#getting_by_range_methods_in_trx )*

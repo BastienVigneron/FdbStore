@@ -90,9 +90,6 @@ mod tests {
         .await?;
         assert!(r == ak1);
 
-        let owner = ak1.load_by_foreign_full_owner(db.clone()).await;
-        println!("Owner retrieved by foreign key: {:#?}", owner);
-
         // Save a second one
         let ak2 = Ak {
             id: "CKLTKHSLP99NZANMG9RK".to_string(),
@@ -111,6 +108,9 @@ mod tests {
 
         // Check Bob has two aks
         let r = Ak::load_by_index(db.clone(), "owner", "Bob".to_string()).await?;
+        assert!(r.len() == 2);
+        // Same with simplified method name
+        let r = Ak::load_by_owner(db.clone(), "Bob".to_string()).await?;
         assert!(r.len() == 2);
 
         // Try to record another ak with the same marker must lead to error
