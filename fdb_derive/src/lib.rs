@@ -656,6 +656,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
             }
 
             /// Load struct from FDB via primary key range identified by `fdb_key` attribute in an existing transaction context
+            /// Warning: using it with RangeOption::All can lead to high memory usage as all the results is returned in a Vec<T>.
             async fn load_by_range_in_trx<T>(
                 trx: &foundationdb::RetryableTransaction,
                 query: fdb_trait::RangeQuery<T>,
@@ -664,7 +665,7 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                 T: Serialize + Sync + Sized + std::marker::Send,
             {
                 let index_name = format!("store:{}:primary:", stringify!(#name));
-                let end_end_key = [index_name.as_bytes(), &[0xFF]].concat();
+                let end_end_key = #as_fdb_primary_key_fn_name(&0xFF)?;
 
                 async move {
                     let range_option: foundationdb::RangeOption = match query {
@@ -697,11 +698,11 @@ pub fn derive_fdb_store(input: TokenStream) -> TokenStream {
                         RangeQuery::All => {
                             let start_key = index_name.into_bytes();
                             foundationdb::RangeOption {
+                                mode: StreamingMode::WantAll,
                                 ..foundationdb::RangeOption::from((start_key, end_end_key))
                             }
                         }
                     };
-
                     let iter = trx.get_range(&range_option, 1, false).await?.into_iter();
                     let mut results: Vec<Self> = Vec::new();
                     for ele in iter {

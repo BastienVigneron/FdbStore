@@ -26,6 +26,8 @@
 [dev-dependencies]
   fdb_derive = { path = "../fdb_derive" }
   fdb_trait = { path = "../fdb_trait" }
+  test-log = { version = "0.2", features = ["trace"] }
+  tracing = "0.1.41"
 
 [[test]]
   name = "integration_test"

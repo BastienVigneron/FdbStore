@@ -6,6 +6,7 @@ mod tests {
     use fdb_derive::FdbStore;
     use fdb_trait::{FdbStore, KvError, RangeQuery};
     use foundationdb::api::NetworkAutoStop;
+    use foundationdb::options::StreamingMode;
     use foundationdb::{Database, FdbResult};
     use serde::{Deserialize, Serialize};
 
@@ -13,6 +14,8 @@ mod tests {
     use std::sync::Arc;
     use std::sync::OnceLock;
     use ulid::Ulid;
+
+    use tracing::{debug, info};
 
     async fn setup_database() -> FdbResult<Arc<Database>> {
         // Initiate local fdb native client
@@ -373,6 +376,51 @@ mod tests {
         .await?;
         assert!(range1.len() == 3);
 
+        Ok(())
+    }
+
+    #[tokio::test]
+    #[test_log::test]
+    async fn test_06_get_all() -> Result<(), KvError> {
+        let db = setup_database().await?;
+
+        let bob = Owner {
+            id: "Bob".to_owned(),
+            state: 1,
+            full_name: "Bob Sincar".to_owned(),
+        };
+
+        let ak1 = Ak {
+            id: "".to_string(),
+            sk: "".to_string(),
+            state: "ACTIVE".to_string(),
+            tags: None,
+            marker: Ulid::from_str("01JRX2VBGFD15EH6H5H9AD5WC8").unwrap(),
+            trusted: true,
+            owner: "Bob".to_string(),
+            full_owner: bob.clone(),
+        };
+        const NB_AK: usize = 200;
+
+        let aks: Vec<Ak> = (0..NB_AK)
+            .map(|i| Ak {
+                id: format!("id-{:?}", i),
+                sk: format!("sk-{:?}", i),
+                marker: ulid::Ulid::new(),
+                ..ak1.clone()
+            })
+            .collect();
+
+        for ele in &aks {
+            ele.save(db.clone()).await?;
+        }
+        info!("saved {NB_AK:} ak...");
+
+        let result = Ak::load_by_primary_range(db.clone(), RangeQuery::All).await?;
+
+        debug!("{} AK loaded with RangeQuery::All", result.len());
+        result.iter().for_each(|ak| info!("{ak:?}"));
+        assert!(result.len() == NB_AK);
         Ok(())
     }
 }
