@@ -1,0 +1,18 @@
+services:
+  fdb:
+    image: foundationdb/foundationdb:7.3.43
+    entrypoint: ["/bin/bash", "-c"]
+    command:
+      - |
+        set -euo pipefail
+        echo "docker:docker@127.0.0.1:4500" > /var/fdb/fdb.cluster
+        exec fdbserver --listen-address 0.0.0.0:4500 --public-address 127.0.0.1:4500 \
+          --datadir /var/fdb/data --logdir /var/fdb/logs \
+          --locality-zoneid="$$(hostname)" --locality-machineid="$$(hostname)" --class unset
+    ports:
+      - "4500:4500"
+    volumes:
+      - fdb-data:/var/fdb/data
+
+volumes:
+  fdb-data:

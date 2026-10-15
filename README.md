@@ -156,6 +156,48 @@ Checkout tests in `/tests/src/test.rs` for more examples.
 
 Any kind of type can be used as a primary key / secondary index as long as it implements `Serialize, Deserialize`.
 
+### Running tests locally (Docker)
+
+Integration tests need a FoundationDB server. It runs only inside Docker — no host `fdbserver` is used; tests on the host connect to the container through a repo-local cluster file.
+
+**Prerequisites**
+- Docker + Compose plugin
+- `foundationdb-clients` 7.3.43 (provides `libfdb_c.so`, required to link the `foundationdb` crate)
+- Rust toolchain (cargo)
+
+**Run the suite**
+
+```bash
+./docker/run-tests.sh
+```
+
+This starts the container, waits until the server answers, configures the database (idempotent), writes `docker/fdb.cluster` (gitignored), and runs `cargo test -- tests --nocapture --test-threads=1` with `FDB_CLUSTER_FILE` pointing at it. The container stays running for fast re-runs.
+
+**Subcommands:** `test` (default), `up`, `down`, `reset` (fresh cluster, wipes data), `logs`.
+
+**Dev mode: run tests directly while developing**
+
+Start the environment once, then run/debug tests with plain `cargo test`:
+
+```bash
+./docker/run-tests.sh up    # once per clone (or after reboot)
+direnv allow                # once per clone: loads FDB_CLUSTER_FILE from the committed .envrc
+```
+
+Then repeatedly — plain cargo, IDE run/debug:
+
+```bash
+cargo test -- tests --nocapture --test-threads=1
+```
+
+Without direnv, export the variable instead: `export FDB_CLUSTER_FILE=$PWD/docker/fdb.cluster`. Always run from a shell where it is set — the host's `/etc/foundationdb/fdb.cluster` has a different cookie and fails with "Unable to locate a cluster controller".
+
+**Troubleshooting**
+- Port 4500 already in use → stop the native service: `sudo systemctl stop foundationdb`
+- Stale/broken data → `./docker/run-tests.sh reset`
+- `libfdb_c not found` → install `foundationdb-clients` 7.3.43
+- "Unable to locate a cluster controller" → `FDB_CLUSTER_FILE` is not set (or points elsewhere); load `.env` or export it
+
 ### Know limitations
 - `FdbStore` doesn't (yet) manage key or value splitting if a key exceeds 10,000 bytes or a value exceeds 100,000 bytes (after serialization).
 - `FdbStore` doesn't (yet) manage large transactions (I.E. transaction that exceed 10,000,000 bytes of affected data).
