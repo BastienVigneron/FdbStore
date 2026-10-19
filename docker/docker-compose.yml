@@ -1,6 +1,6 @@
 services:
   fdb:
-    image: foundationdb/foundationdb:7.3.43
+    image: foundationdb/foundationdb:7.3.79
     entrypoint: ["/bin/bash", "-c"]
     command:
       - |

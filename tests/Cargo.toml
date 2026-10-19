@@ -13,9 +13,9 @@
 
 
 [dependencies]
-  foundationdb = { version = "0.9.2", features = [
+  foundationdb = { version = "0.11.0", features = [
     "embedded-fdb-include",
-    "fdb-7_1",
+    "fdb-7_3",
   ] }
   tokio = { version = "1.28.0", features = ["full"] }
   ulid = { version = "1.2.1", features = ["serde"] }

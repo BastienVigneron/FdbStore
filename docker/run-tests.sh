@@ -15,7 +15,7 @@ preflight() {
     ldconfig -p 2>/dev/null | grep libfdb_c >/dev/null && return 0
     ls /usr/lib*/libfdb_c.so* /lib*/libfdb_c.so* /usr/lib/*/libfdb_c.so* >/dev/null 2>&1
   }
-  have_libfdb_c || { echo "error: libfdb_c not found; install foundationdb-clients 7.3.43" >&2; exit 1; }
+  have_libfdb_c || { echo "error: libfdb_c not found; install foundationdb-clients 7.3.79" >&2; exit 1; }
 }
 
 check_port() {
