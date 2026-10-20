@@ -1,3 +1,8 @@
 /target
 /fdb_trait/target
 /fdb_derive/target
+
+/docker/fdb.cluster
+
+# shared direnv env for local test runs (repo-level, overrides global ignore)
+!.envrc
