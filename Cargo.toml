@@ -1,3 +1,6 @@
 [workspace]
   resolver = "2"
   members = ["fdb_derive", "fdb_trait", "tests"]
+
+[patch.crates-io]
+fdb_trait = { path = "fdb_trait" }
